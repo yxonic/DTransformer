@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "dbkt"
+name = "DTransformer"
 version = "0.1.0"
 description = ""
 authors = ["Yu Yin <yxonic@gmail.com>"]

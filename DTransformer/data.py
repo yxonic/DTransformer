@@ -1,0 +1,2 @@
+class KTDataIter:
+    pass

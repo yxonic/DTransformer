@@ -5,16 +5,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils import device
 
-
-class Architecture(nn.Module):
+class DTransformer(nn.Module):
     def __init__(self, d_model=256, n_heads=8, dropout=0.05):
         super().__init__()
         self.n_heads = n_heads
-        self.block1 = TransformerLayer(d_model, n_heads, dropout)
-        self.block2 = TransformerLayer(d_model, n_heads, dropout)
-        self.block3 = TransformerLayer(d_model, n_heads, dropout, kq_same=False)
+        self.block1 = DTransformerLayer(d_model, n_heads, dropout)
+        self.block2 = DTransformerLayer(d_model, n_heads, dropout)
+        self.block3 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
         self.linear_k = nn.Linear(d_model // n_heads, d_model)
         self.linear_v = nn.Linear(d_model // n_heads, d_model)
         self.know_params = nn.Parameter(torch.empty(1, 1, d_model))
@@ -39,16 +37,17 @@ class Architecture(nn.Module):
             self.linear_v(h.view(bs, seqlen, self.n_heads, d_model // self.n_heads))
         ).view(bs * seqlen, self.n_heads, -1)
 
-        beta = torch.bmm(key, q_emb.view(bs * seqlen, -1, 1)).view(
-            bs * seqlen, 1, self.n_heads
-        )
+        beta = torch.matmul(
+            key,
+            q_emb.view(bs * seqlen, -1, 1),
+        ).view(bs * seqlen, 1, self.n_heads)
         alpha = torch.softmax(beta, -1)
-        h = torch.bmm(alpha, value).view(bs, seqlen, -1)
+        h = torch.matmul(alpha, value).view(bs, seqlen, -1)
 
         return h
 
 
-class TransformerLayer(nn.Module):
+class DTransformerLayer(nn.Module):
     def __init__(self, d_model, n_heads, dropout, kq_same=True):
         super().__init__()
         self.masked_attn_head = MultiHeadAttention(d_model, n_heads, dropout, kq_same)
@@ -106,7 +105,17 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2)
 
         # calculate attention using function we will define next
-        scores = attention(q, k, v, self.d_k, mask, zero_pad, self.dropout, self.gammas)
+        scores = attention(
+            q,
+            k,
+            v,
+            self.d_k,
+            mask,
+            zero_pad,
+            self.dropout,
+            gamma=self.gammas,
+            device=self.gammas.device,
+        )
 
         # concatenate heads and put through final linear layer
         concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
@@ -116,7 +125,7 @@ class MultiHeadAttention(nn.Module):
         return output
 
 
-def attention(q, k, v, d_k, mask, zero_pad, dropout, gamma=None):
+def attention(q, k, v, d_k, mask, zero_pad, dropout, gamma=None, device="cpu"):
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
     bs, head, seqlen, _ = scores.size()
 
@@ -136,6 +145,7 @@ def attention(q, k, v, d_k, mask, zero_pad, dropout, gamma=None):
             (disttotal_scores - distcum_scores) * position_effect, min=0.0
         )
         dist_scores = dist_scores.sqrt().detach()
+
     m = nn.Softplus()
     gamma = -1.0 * m(gamma).unsqueeze(0)
     # Now after do exp(gamma*distance) and then clamp to 1e-5 to 1e5
