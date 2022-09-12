@@ -1,2 +1,3 @@
 class KTDataIter:
-    pass
+    def __init__(data_path: str, shuffle=False):
+        pass

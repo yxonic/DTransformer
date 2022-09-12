@@ -1,27 +1,53 @@
 from argparse import ArgumentParser
 
+import torch
+import tomlkit
+
 from DTransformer.data import KTDataIter
+from DTransformer.eval import Evaluator
 
 
-# configure main parser
+# configure the main parser
 parser = ArgumentParser()
-parser.add_argument("-c", "--config", help="configuration file in TOML")
+parser.add_argument("-c", "--config", help="configuration file in TOML", required=True)
+# load dataset names from configuration
+datasets = tomlkit.load(open("data/datasets.toml"))
+parser.add_argument(
+    "-d",
+    "--dataset",
+    help="choose from a dataset",
+    choices=datasets.keys(),
+    required=True,
+)
 
 
+# training logic
 def main(args):
-    print(args)
-
     # prepare dataset
-    data = KTDataIter()
+    train_data = KTDataIter(datasets[args.dataset]["train"], shuffle=True)
+    valid_data = KTDataIter(datasets[args.dataset]["valid"])
+
+    # prepare model and optimizer
+    model = ...
+    optim = ...
 
     # training
     for epoch in range(args.n_epochs):
-        for batch in data:
-            train_on_batch(batch)
+        for (q, s) in train_data:
+            loss = model.get_loss(q, s)
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
 
+        # validation
+        evaluator = Evaluator()
 
-def train_on_batch(batch):
-    pass
+        with torch.no_grad():
+            for (q, s) in valid_data:
+                _, pred = model(q, s)
+                evaluator.evaluate(s, pred)
+
+        evaluator.report()
 
 
 if __name__ == "__main__":
