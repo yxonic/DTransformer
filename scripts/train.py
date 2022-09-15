@@ -26,9 +26,8 @@ parser.add_argument(
 # training logic
 def main(args):
     # prepare dataset
-    group = datasets[args.dataset]["group"]
-    train_data = KTData(datasets[args.dataset]["train"], group, shuffle=True)
-    valid_data = KTData(datasets[args.dataset]["valid"], group)
+    train_data = KTData(datasets[args.dataset]["train"], shuffle=True)
+    valid_data = KTData(datasets[args.dataset]["valid"])
 
     # prepare model and optimizer
     model = DTransformer()

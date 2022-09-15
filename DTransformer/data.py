@@ -10,8 +10,8 @@ import torch
 
 
 class KTData:
-    def __init__(self, data_path: str, group=3, shuffle=False):
-        self.data = Lines(data_path, group=group)
+    def __init__(self, data_path: str, shuffle=False):
+        self.data = Lines(data_path, group=3)
         self.shuffle = shuffle
 
     def __iter__(self):
