@@ -3,8 +3,9 @@ from argparse import ArgumentParser
 import torch
 import tomlkit
 
-from DTransformer.data import KTDataIter
+from DTransformer.data import KTData
 from DTransformer.eval import Evaluator
+from DTransformer.model import DTransformer
 
 
 # configure the main parser
@@ -23,17 +24,17 @@ parser.add_argument(
 
 # testing logic
 def main(args):
-    test_data = KTDataIter(datasets[args.dataset]["test"])
+    test_data = KTData(datasets[args.dataset]["test"])
 
     # prepare model
-    model = ...
+    model = DTransformer()
 
     # test
     evaluator = Evaluator()
 
     with torch.no_grad():
-        for (q, s) in test_data:
-            _, pred = model(q, s)
+        for q, s in test_data:
+            pred = model.predict(q, s)
             evaluator.evaluate(s, pred)
 
     evaluator.report()

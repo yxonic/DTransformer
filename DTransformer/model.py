@@ -46,6 +46,13 @@ class DTransformer(nn.Module):
 
         return h
 
+    def predict(self, q):
+        pass
+
+    def get_loss(self, q, s):
+        # get qa from q and s, following DKT, etc.
+        pass
+
 
 class DTransformerLayer(nn.Module):
     def __init__(self, d_model, n_heads, dropout, kq_same=True):
