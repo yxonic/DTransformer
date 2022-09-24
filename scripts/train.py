@@ -36,6 +36,7 @@ def main(args):
 
     # training
     for epoch in range(args.n_epochs):
+        model.train()
         for batch in train_data:
             q, s = batch  # TODO: support more data input types
             loss = model.get_loss(q, s)
@@ -44,6 +45,7 @@ def main(args):
             optim.step()
 
         # validation
+        model.eval()
         evaluator = Evaluator()
 
         with torch.no_grad():

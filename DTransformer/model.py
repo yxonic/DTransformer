@@ -7,8 +7,12 @@ import torch.nn.functional as F
 
 
 class DTransformer(nn.Module):
-    def __init__(self, d_model=256, n_heads=8, dropout=0.05):
+    def __init__(self, n_question, d_model=256, d_fc=512, n_heads=8, dropout=0.05):
         super().__init__()
+        self.n_question = n_question
+        self.q_embed = nn.Embedding(n_question + 1, d_model)
+        self.qa_embed = nn.Embedding(2 * n_question + 1, d_model)
+
         self.n_heads = n_heads
         self.block1 = DTransformerLayer(d_model, n_heads, dropout)
         self.block2 = DTransformerLayer(d_model, n_heads, dropout)
@@ -17,6 +21,16 @@ class DTransformer(nn.Module):
         self.linear_v = nn.Linear(d_model // n_heads, d_model)
         self.know_params = nn.Parameter(torch.empty(1, 1, d_model))
         torch.nn.init.uniform_(self.know_params, -1.0, 1.0)
+
+        self.out = nn.Sequential(
+            nn.Linear(d_model * 2, d_fc),
+            nn.ReLU(),
+            nn.Dropout(self.dropout),
+            nn.Linear(d_fc, 256),
+            nn.ReLU(),
+            nn.Dropout(self.dropout),
+            nn.Linear(256, 1),
+        )
 
     def forward(self, q_emb, qa_emb):
         hq = self.block1(q_emb, q_emb, q_emb, peek_cur=True)
@@ -46,12 +60,21 @@ class DTransformer(nn.Module):
 
         return h
 
-    def predict(self, q):
-        pass
+    def predict(self, q, s):
+        qa = s + self.n_question
+        q_emb = self.q_embed(q)
+        qa_emb = self.qa_embed(qa)
+        h = self(q_emb, qa_emb)
+        return self.out(torch.cat([q_emb, h], dim=-1))
 
     def get_loss(self, q, s):
-        # get qa from q and s, following DKT, etc.
-        pass
+        logits = self.predict(q, s)
+        mask = s > -0.9
+        masked_labels = s[mask]
+        masked_logits = logits[mask]
+        return F.binary_cross_entropy_with_logits(
+            masked_logits, masked_labels, reduction="sum"
+        )
 
 
 class DTransformerLayer(nn.Module):
@@ -156,9 +179,7 @@ def attention(q, k, v, d_k, mask, zero_pad, dropout, gamma=None, device="cpu"):
     m = nn.Softplus()
     gamma = -1.0 * m(gamma).unsqueeze(0)
     # Now after do exp(gamma*distance) and then clamp to 1e-5 to 1e5
-    total_effect = torch.clamp(
-        torch.clamp((dist_scores * gamma).exp(), min=1e-5), max=1e5
-    )
+    total_effect = torch.clamp((dist_scores * gamma).exp(), min=1e-5, max=1e5)
     scores = scores * total_effect
 
     scores.masked_fill(mask == 0, -1e23)
