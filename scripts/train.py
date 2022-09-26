@@ -12,6 +12,7 @@ from DTransformer.model import DTransformer
 parser = ArgumentParser()
 parser.add_argument("-c", "--config", help="configuration file in TOML", required=True)
 parser.add_argument("-d", "--device", help="device to run network on", default="cpu")
+parser.add_argument("-bs", "--batch_size", help="batch size", default=64)
 # load dataset names from configuration
 datasets = tomlkit.load(open("data/datasets.toml"))
 parser.add_argument(

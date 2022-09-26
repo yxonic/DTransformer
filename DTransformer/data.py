@@ -10,12 +10,35 @@ import torch
 
 
 class KTData:
-    def __init__(self, data_path: str, shuffle=False):
-        self.data = Lines(data_path, group=3)
+    def __init__(self, data_path: str, batch_size=None, shuffle=False):
+        self.data = Lines(data_path, group=3)  # q, s
+        self.batch_size = batch_size
         self.shuffle = shuffle
 
     def __iter__(self):
-        return Iterator(Transform(self.data), full_shuffle=self.shuffle)
+        return Iterator(
+            Transform(self.data),
+            batch_size=self.batch_size,
+            full_shuffle=self.shuffle,
+            transform=_transform_batch,
+            prefetch=True,
+        )
+
+
+class KTDataWithPid:
+    def __init__(self, data_path: str, batch_size=None, shuffle=False):
+        self.data = Lines(data_path, group=6)  # q, s, pid, it, at
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+    def __iter__(self):
+        return Iterator(
+            Transform(self.data),
+            batch_size=self.batch_size,
+            full_shuffle=self.shuffle,
+            transform=_transform_batch,
+            prefetch=True,
+        )
 
 
 class Transform:
@@ -27,16 +50,19 @@ class Transform:
 
     def __getitem__(self, index):
         batch = self.data[index]
-        del batch[0]  # remove count
+
+        # single sequence
         if isinstance(index, int):
+            del batch[0]  # remove count
             items = [[int(x) for x in line.strip().split(",")] for line in batch]
-        else:
-            items = []
-            for lines in batch:
-                items.append(
-                    [[int(x) for x in line.strip().split(",")] for line in lines]
-                )
-        return [torch.tensor(item) for item in items]
+            return [torch.tensor(item) for item in items]
+
+        # batch
+        items = []
+        for lines in batch:
+            del lines[0]  # remove count
+            items.append([[int(x) for x in line.strip().split(",")] for line in lines])
+        return _transform_batch(items)
 
 
 class Lines:
@@ -107,14 +133,6 @@ class Lines:
         raise IndexError
 
 
-def _clip(v, low, high):
-    if v < low:
-        v = low
-    if v > high:
-        v = high
-    return
-
-
 class Iterator:
     """Iterator on data and labels, with states for save and restore."""
 
@@ -122,11 +140,11 @@ class Iterator:
         self,
         data,
         *label,
-        transform=None,
         prefetch=False,
         length=None,
         batch_size=None,
-        shuffle=True,
+        transform=None,
+        shuffle=False,
         full_shuffle=False,
     ):
         self.data = data
@@ -135,6 +153,7 @@ class Iterator:
         self.batch_size = batch_size
         self.queue = queue.Queue(maxsize=8)
         self.length = length if length is not None else len(data)
+        self.transform = transform
 
         assert all(
             self.length == len(lab) for lab in label
@@ -205,8 +224,15 @@ class Iterator:
                     inds = self.full_index[i * bs : (i + 1) * bs]
 
                     data_batch = [self.data[i] for i in inds]
+                    if self.transform is not None:
+                        data_batch = self.transform(data_batch)
 
-                    label_batch = [[label[i] for i in inds] for label in self.label]
+                    label_batch = [
+                        [label[i] for i in inds]
+                        if self.transform is None
+                        else self.transform([label[i] for i in inds])
+                        for label in self.label
+                    ]
 
                     if label_batch:
                         self.queue.put([data_batch] + label_batch)
@@ -256,3 +282,23 @@ class Iterator:
                         return
                     else:
                         raise
+
+
+def _transform_batch(batch):
+    batch = list(zip(*batch))
+    return [
+        torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor(x) if isinstance(x, list) else x for x in item],
+            batch_first=True,
+            padding_value=-1,
+        )
+        for item in batch
+    ]
+
+
+def _clip(v, low, high):
+    if v < low:
+        v = low
+    if v > high:
+        v = high
+    return v
