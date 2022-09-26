@@ -1,3 +1,4 @@
+import os
 from argparse import ArgumentParser
 
 import torch
@@ -8,11 +9,15 @@ from DTransformer.eval import Evaluator
 from DTransformer.model import DTransformer
 
 
+DATA_DIR = "data"
+
 # configure the main parser
 parser = ArgumentParser()
 parser.add_argument("-c", "--config", help="configuration file in TOML")
+parser.add_argument("--device", help="device to run network on", default="cpu")
+parser.add_argument("-bs", "--batch_size", help="batch size", default=64)
 # load dataset names from configuration
-datasets = tomlkit.load(open("data/datasets.toml"))
+datasets = tomlkit.load(open(os.path.join(DATA_DIR, "datasets.toml")))
 parser.add_argument(
     "-d",
     "--dataset",
@@ -24,10 +29,17 @@ parser.add_argument(
 
 # testing logic
 def main(args):
-    test_data = KTData(datasets[args.dataset]["test"])
+    # prepare datasets
+    dataset = datasets[args.dataset]
+    test_data = KTData(
+        os.path.join(DATA_DIR, dataset["test"]),
+        dataset["inputs"],
+        batch_size=args.batch_size,
+    )
 
     # prepare model
     model = DTransformer()
+    model.eval()
 
     # test
     evaluator = Evaluator()

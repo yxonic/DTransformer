@@ -10,40 +10,62 @@ import torch
 
 
 class KTData:
-    def __init__(self, data_path: str, batch_size=None, shuffle=False):
-        self.data = Lines(data_path, group=3)  # q, s
+    def __init__(
+        self, data_path: str, inputs=None, batch_size=None, seq_len=200, shuffle=False
+    ):
+        if inputs is None:
+            inputs = ["q", "s"]
+        self.inputs = inputs
+        self.data = Lines(data_path, group=len(inputs) + 1)
         self.batch_size = batch_size
+        self.seq_len = seq_len
         self.shuffle = shuffle
 
     def __iter__(self):
         return Iterator(
-            Transform(self.data),
+            Transform(self.data, self.inputs, self.seq_len),
             batch_size=self.batch_size,
             full_shuffle=self.shuffle,
-            transform=_transform_batch,
+            transform=lambda x: _transform_batch(x, self.inputs, self.seq_len),
             prefetch=True,
         )
 
 
-class KTDataWithPid:
-    def __init__(self, data_path: str, batch_size=None, shuffle=False):
-        self.data = Lines(data_path, group=6)  # q, s, pid, it, at
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-
-    def __iter__(self):
-        return Iterator(
-            Transform(self.data),
-            batch_size=self.batch_size,
-            full_shuffle=self.shuffle,
-            transform=_transform_batch,
-            prefetch=True,
+def _transform_batch(batch, fields, seq_len):
+    batch = list(zip(*batch))
+    batch = [
+        torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor(x) if isinstance(x, list) else x for x in item],
+            batch_first=True,
+            padding_value=-1,
         )
+        for item in batch
+    ]
+    return Batch(batch, fields, seq_len)
+
+
+class Batch:
+    def __init__(self, data, fields, seq_len):
+        self.data = data
+        self.stoi = {f: i for i, f in enumerate(fields)}
+        self.seq_len = seq_len
+
+    def get(self, *fields):
+        L = self.data[0].size(1)
+        return [
+            [
+                self.data[self.stoi[f]][:, i * self.seq_len : (i + 1) * self.seq_len]
+                for i in range(L // self.seq_len)
+            ]
+            for f in fields
+        ]
 
 
 class Transform:
-    def __init__(self, data):
+    def __init__(self, data, inputs, seq_len):
         self.data = data
+        self.inputs = inputs
+        self.seq_len = seq_len
 
     def __len__(self):
         return len(self.data)
@@ -62,7 +84,7 @@ class Transform:
         for lines in batch:
             del lines[0]  # remove count
             items.append([[int(x) for x in line.strip().split(",")] for line in lines])
-        return _transform_batch(items)
+        return _transform_batch(items, self.inputs, self.seq_len)
 
 
 class Lines:
@@ -282,18 +304,6 @@ class Iterator:
                         return
                     else:
                         raise
-
-
-def _transform_batch(batch):
-    batch = list(zip(*batch))
-    return [
-        torch.nn.utils.rnn.pad_sequence(
-            [torch.tensor(x) if isinstance(x, list) else x for x in item],
-            batch_first=True,
-            padding_value=-1,
-        )
-        for item in batch
-    ]
 
 
 def _clip(v, low, high):

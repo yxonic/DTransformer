@@ -7,11 +7,11 @@ import torch.nn.functional as F
 
 
 class DTransformer(nn.Module):
-    def __init__(self, n_question, d_model=256, d_fc=512, n_heads=8, dropout=0.05):
+    def __init__(self, n_questions, d_model=256, d_fc=512, n_heads=8, dropout=0.05):
         super().__init__()
-        self.n_question = n_question
-        self.q_embed = nn.Embedding(n_question + 1, d_model)
-        self.qa_embed = nn.Embedding(2 * n_question + 1, d_model)
+        self.n_questions = n_questions
+        self.q_embed = nn.Embedding(n_questions + 1, d_model)
+        self.qa_embed = nn.Embedding(2 * n_questions + 1, d_model)
 
         self.n_heads = n_heads
         self.block1 = DTransformerLayer(d_model, n_heads, dropout)
@@ -25,10 +25,10 @@ class DTransformer(nn.Module):
         self.out = nn.Sequential(
             nn.Linear(d_model * 2, d_fc),
             nn.ReLU(),
-            nn.Dropout(self.dropout),
+            nn.Dropout(dropout),
             nn.Linear(d_fc, 256),
             nn.ReLU(),
-            nn.Dropout(self.dropout),
+            nn.Dropout(dropout),
             nn.Linear(256, 1),
         )
 
@@ -61,19 +61,21 @@ class DTransformer(nn.Module):
         return h
 
     def predict(self, q, s):
-        qa = s + self.n_question
+        q[q == -1] = 0
+        qa = s * self.n_questions + self.n_questions
+        qa[s == -1] = 0
         q_emb = self.q_embed(q)
         qa_emb = self.qa_embed(qa)
         h = self(q_emb, qa_emb)
-        return self.out(torch.cat([q_emb, h], dim=-1))
+        return self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
 
     def get_loss(self, q, s):
         logits = self.predict(q, s)
         mask = s > -0.9
-        masked_labels = s[mask]
+        masked_labels = s[mask].float()
         masked_logits = logits[mask]
         return F.binary_cross_entropy_with_logits(
-            masked_logits, masked_labels, reduction="sum"
+            masked_logits, masked_labels, reduction="mean"
         )
 
 
