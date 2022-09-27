@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 
 import torch
 import tomlkit
+from tqdm import tqdm
 
 from DTransformer.data import KTData
 from DTransformer.eval import Evaluator
@@ -39,17 +40,22 @@ def main(args):
 
     # prepare model
     model = DTransformer()
+    model.to(args.device)
     model.eval()
 
     # test
     evaluator = Evaluator()
 
     with torch.no_grad():
-        for q, s in test_data:
-            pred = model.predict(q, s)
-            evaluator.evaluate(s, pred)
+        it = tqdm(test_data)
+        for batch in it:
+            q, s = batch.get("q", "s")
+            for q, s in zip(q, s):
+                pred = model.predict(q, s)
+                evaluator.evaluate(s, pred)
+            it.set_postfix(evaluator.report())
 
-    evaluator.report()
+    print(evaluator.report())
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 
 import torch
 import tomlkit
+from tqdm import tqdm
 
 from DTransformer.data import KTData
 from DTransformer.eval import Evaluator
@@ -51,25 +52,30 @@ def main(args):
     # training
     for epoch in range(args.n_epochs):
         model.train()
-        for batch in train_data:
+        it = tqdm(train_data)
+        for batch in it:
             q, s = batch.get("q", "s")
             for q, s in zip(q, s):
                 loss = model.get_loss(q, s)
                 optim.zero_grad()
                 loss.backward()
                 optim.step()
-            print(loss.item())
+            it.set_postfix({"loss": loss.item()})
 
         # validation
         model.eval()
         evaluator = Evaluator()
 
         with torch.no_grad():
-            for (q, s) in valid_data:
-                pred = model.predict(q, s)
-                evaluator.evaluate(s, pred)
+            it = tqdm(valid_data)
+            for batch in it:
+                q, s = batch.get("q", "s")
+                for q, s in zip(q, s):
+                    pred = model.predict(q, s)
+                    evaluator.evaluate(s, pred)
+                it.set_postfix(evaluator.report())
 
-        evaluator.report()
+        print(evaluator.report())
 
 
 if __name__ == "__main__":
