@@ -47,7 +47,7 @@ def main(args):
     evaluator = Evaluator()
 
     with torch.no_grad():
-        it = tqdm(test_data)
+        it = tqdm(iter(test_data))
         for batch in it:
             q, s = batch.get("q", "s")
             for q, s in zip(q, s):

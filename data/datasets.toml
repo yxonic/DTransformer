@@ -1,6 +1,5 @@
 [ASSIST09]
 train = "2009_skill_builder_data_corrected/train.txt"
-valid = "2009_skill_builder_data_corrected/valid.txt"
 test = "2009_skill_builder_data_corrected/test.txt"
 n_questions = 123
 n_pid = 17751

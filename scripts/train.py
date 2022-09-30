@@ -10,13 +10,15 @@ from DTransformer.eval import Evaluator
 from DTransformer.model import DTransformer
 
 DATA_DIR = "data"
+MODEL_DIR = "model"
 
 # configure the main parser
 parser = ArgumentParser()
 parser.add_argument("-c", "--config", help="configuration file in TOML", required=True)
 parser.add_argument("--device", help="device to run network on", default="cpu")
-parser.add_argument("-bs", "--batch_size", help="batch size", default=64)
-parser.add_argument("-n", "--n_epochs", help="training epochs", default=50)
+parser.add_argument("-bs", "--batch_size", help="batch size", default=64, type=int)
+parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
+parser.add_argument("-f", "--from_epoch", help="resume training from epoch", default=None)
 # load dataset names from configuration
 datasets = tomlkit.load(open(os.path.join(DATA_DIR, "datasets.toml")))
 parser.add_argument(
@@ -39,7 +41,7 @@ def main(args):
         shuffle=True,
     )
     valid_data = KTData(
-        os.path.join(DATA_DIR, dataset["valid"]),
+        os.path.join(DATA_DIR, dataset["valid"] if "valid" in dataset else dataset["test"]),
         dataset["inputs"],
         batch_size=args.batch_size,
     )
@@ -52,7 +54,7 @@ def main(args):
     # training
     for epoch in range(args.n_epochs):
         model.train()
-        it = tqdm(train_data)
+        it = tqdm(iter(train_data))
         for batch in it:
             q, s = batch.get("q", "s")
             for q, s in zip(q, s):
@@ -67,7 +69,7 @@ def main(args):
         evaluator = Evaluator()
 
         with torch.no_grad():
-            it = tqdm(valid_data)
+            it = tqdm(iter(valid_data))
             for batch in it:
                 q, s = batch.get("q", "s")
                 for q, s in zip(q, s):
