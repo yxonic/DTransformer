@@ -61,51 +61,49 @@ class DTransformer(nn.Module):
         return h
 
     def predict(self, q, s):
-        q[q == -1] = 0
-        qa = s * self.n_questions + self.n_questions
-        qa[s == -1] = 0
+        # for qa embedding
+        qa = s * self.n_questions + q
+
+        # set prediction mask
+        q[s < 0] = 0
+        qa[s < 0] = 0
+
         q_emb = self.q_embed(q)
         qa_emb = self.qa_embed(qa)
         h = self(q_emb, qa_emb)
-        return self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
+        return h, self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
 
     def get_loss(self, q, s):
-        logits = self.predict(q, s)
-        mask = s > -0.9
-        masked_labels = s[mask].float()
-        masked_logits = logits[mask]
+        _, logits = self.predict(q, s)
+        masked_labels = s[s >= 0].float()
+        masked_logits = logits[s >= 0]
         return F.binary_cross_entropy_with_logits(
-            masked_logits, masked_labels, reduction="mean"
+            masked_logits, masked_labels, reduction="sum"
         )
 
 
 class DTransformerLayer(nn.Module):
     def __init__(self, d_model, n_heads, dropout, kq_same=True):
         super().__init__()
-        self.masked_attn_head = MultiHeadAttention(d_model, n_heads, dropout, kq_same)
+        self.masked_attn_head = MultiHeadAttention(d_model, n_heads, kq_same)
 
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model)
 
     def forward(self, query, key, values, peek_cur=False):
+        # construct mask
         seqlen = query.size(1)
-        nopeek_mask = np.triu(np.ones((1, 1, seqlen, seqlen)), k=peek_cur)
-        src_mask = (torch.from_numpy(nopeek_mask) == 0).to()
-        if peek_cur:
-            query_ = self.masked_attn_head(
-                query, key, values, mask=src_mask, zero_pad=False
-            )
-        else:
-            query_ = self.masked_attn_head(
-                query, key, values, mask=src_mask, zero_pad=True
-            )
+        mask = torch.ones(seqlen, seqlen).tril(0 if peek_cur else -1)
+        mask = mask.bool()[None, None, :, :]
 
+        # apply transformer layer
+        query_ = self.masked_attn_head(query, key, values, mask)
         query = query + self.dropout(query_)
         return self.layer_norm(query)
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, n_heads, dropout, kq_same=True, bias=True):
+    def __init__(self, d_model, n_heads, kq_same=True, bias=True):
         super().__init__()
         self.d_model = d_model
         self.d_k = d_model // n_heads
@@ -118,12 +116,11 @@ class MultiHeadAttention(nn.Module):
             self.k_linear = nn.Linear(d_model, d_model, bias=bias)
         self.v_linear = nn.Linear(d_model, d_model, bias=bias)
 
-        self.dropout = nn.Dropout(dropout)
         self.out_proj = nn.Linear(d_model, d_model, bias=bias)
         self.gammas = nn.Parameter(torch.zeros(n_heads, 1, 1))
         torch.nn.init.xavier_uniform_(self.gammas)
 
-    def forward(self, q, k, v, mask, zero_pad):
+    def forward(self, q, k, v, mask):
         bs = q.size(0)
 
         # perform linear operation and split into h heads
@@ -131,7 +128,7 @@ class MultiHeadAttention(nn.Module):
         k = self.k_linear(k).view(bs, -1, self.h, self.d_k)
         v = self.v_linear(v).view(bs, -1, self.h, self.d_k)
 
-        # transpose to get dimensions bs * h * sl * d_model
+        # transpose to get dimensions bs * h * sl * d_k
         k = k.transpose(1, 2)
         q = q.transpose(1, 2)
         v = v.transpose(1, 2)
@@ -141,12 +138,8 @@ class MultiHeadAttention(nn.Module):
             q,
             k,
             v,
-            self.d_k,
             mask,
-            zero_pad,
-            self.dropout,
-            gamma=self.gammas,
-            device=self.gammas.device,
+            self.gammas,
         )
 
         # concatenate heads and put through final linear layer
@@ -157,38 +150,39 @@ class MultiHeadAttention(nn.Module):
         return output
 
 
-def attention(q, k, v, d_k, mask, zero_pad, dropout, gamma=None, device="cpu"):
+def attention(q, k, v, mask, gamma=None):
+    # attention score with scaled dot production
+    d_k = k.size(-1)
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
     bs, head, seqlen, _ = scores.size()
 
-    x1 = torch.arange(seqlen).expand(seqlen, -1).to(device)
-    x2 = x1.transpose(0, 1).contiguous()
+    # include temporal effect
+    if gamma is not None:
+        x1 = torch.arange(seqlen).float().expand(seqlen, -1).to(gamma.device)
+        x2 = x1.transpose(0, 1).contiguous()
 
-    with torch.no_grad():
-        scores_ = scores.masked_fill(mask == 0, -1e32)
-        scores_ = F.softmax(scores_, dim=-1)
-        scores_ = scores_ * mask.float().to(device)
-        distcum_scores = torch.cumsum(scores_, dim=-1)
-        disttotal_scores = torch.sum(scores_, dim=-1, keepdim=True)
-        position_effect = (
-            torch.abs(x1 - x2)[None, None, :, :].type(torch.FloatTensor).to(device)
-        )
-        dist_scores = torch.clamp(
-            (disttotal_scores - distcum_scores) * position_effect, min=0.0
-        )
-        dist_scores = dist_scores.sqrt().detach()
+        with torch.no_grad():
+            scores_ = scores.masked_fill(mask == 0, -1e32)
+            scores_ = F.softmax(scores_, dim=-1)
 
-    m = nn.Softplus()
-    gamma = -1.0 * m(gamma).unsqueeze(0)
-    # Now after do exp(gamma*distance) and then clamp to 1e-5 to 1e5
-    total_effect = torch.clamp((dist_scores * gamma).exp(), min=1e-5, max=1e5)
-    scores = scores * total_effect
+            distcum_scores = torch.cumsum(scores_, dim=-1)
+            disttotal_scores = torch.sum(scores_, dim=-1, keepdim=True)
+            position_effect = torch.abs(x1 - x2)[None, None, :, :]
+            dist_scores = torch.clamp(
+                (disttotal_scores - distcum_scores) * position_effect, min=0.0
+            )
+            dist_scores = dist_scores.sqrt().detach()
 
-    scores.masked_fill(mask == 0, -1e23)
+        gamma = -1.0 * F.softplus(gamma).unsqueeze(0)
+        total_effect = torch.clamp((dist_scores * gamma).exp(), min=1e-5, max=1e5)
+
+        scores *= total_effect
+
+    # normalize attention score
+    scores.masked_fill_(mask == 0, -1e32)
     scores = F.softmax(scores, dim=-1)
-    if zero_pad:
-        pad_zero = torch.zeros(bs, head, 1, seqlen).to(device)
-        scores = torch.cat([pad_zero, scores[:, :, 1:, :]], dim=2)
-    scores = dropout(scores)
+    scores = scores.masked_fill(mask == 0, 0)  # set to hard zero to avoid leakage
+
+    # calculate output
     output = torch.matmul(scores, v)
     return output
