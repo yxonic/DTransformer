@@ -71,6 +71,7 @@ def main(args):
                 total_loss += loss.item()
                 total_cnt += (s >= 0).sum().item()
                 it.set_postfix({"loss": total_loss / total_cnt})
+                break
 
         # validation
         model.eval()
@@ -82,8 +83,6 @@ def main(args):
                 q, s = batch.get("q", "s")
                 for q, s in zip(q, s):
                     _, pred = model.predict(q, s)
-                    print(s, pred)
-                    print(s.size(), pred.size())
                     evaluator.evaluate(s, pred)
                 it.set_postfix(evaluator.report())
 
@@ -92,4 +91,5 @@ def main(args):
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    print(args)
     main(args)

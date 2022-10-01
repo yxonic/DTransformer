@@ -11,12 +11,13 @@ class DTransformer(nn.Module):
         super().__init__()
         self.n_questions = n_questions
         self.q_embed = nn.Embedding(n_questions + 1, d_model)
-        self.qa_embed = nn.Embedding(2 * n_questions + 1, d_model)
+        self.s_embed = nn.Embedding(2, d_model)
 
         self.n_heads = n_heads
         self.block1 = DTransformerLayer(d_model, n_heads, dropout)
         self.block2 = DTransformerLayer(d_model, n_heads, dropout)
         self.block3 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
+
         self.linear_k = nn.Linear(d_model // n_heads, d_model)
         self.linear_v = nn.Linear(d_model // n_heads, d_model)
         self.know_params = nn.Parameter(torch.empty(1, 1, d_model))
@@ -32,11 +33,15 @@ class DTransformer(nn.Module):
             nn.Linear(256, 1),
         )
 
-    def forward(self, q_emb, qa_emb):
+    def forward(self, q_emb, s_emb):
         hq = self.block1(q_emb, q_emb, q_emb, peek_cur=True)
-        ha = self.block2(qa_emb, qa_emb, qa_emb, peek_cur=True)
+        hs = self.block2(s_emb, s_emb, s_emb, peek_cur=True)
+
+        # AKT
+        # return self.block3(hq, hq, hs, peek_cur=False)
+
         query = self.know_params.expand_as(hq)
-        h = self.block3(query, hq, ha, peek_cur=False)
+        h = self.block3(query, hq, hs, peek_cur=False)
 
         bs, seqlen, d_model = hq.size()
 
@@ -61,17 +66,16 @@ class DTransformer(nn.Module):
         return h
 
     def predict(self, q, s):
-        # for qa embedding
-        qa = s * self.n_questions + q
-
         # set prediction mask
-        q[s < 0] = 0
-        qa[s < 0] = 0
+        q = q.masked_fill(s < 0, 0)
+        s = s.masked_fill(s < 0, 0)
 
         q_emb = self.q_embed(q)
-        qa_emb = self.qa_embed(qa)
-        h = self(q_emb, qa_emb)
-        return h, self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
+        s_emb = self.s_embed(s) + q_emb
+
+        h = self(q_emb, s_emb)
+        y = self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
+        return h, y
 
     def get_loss(self, q, s):
         _, logits = self.predict(q, s)
@@ -134,7 +138,7 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2)
 
         # calculate attention using function we will define next
-        scores = attention(
+        v_ = attention(
             q,
             k,
             v,
@@ -143,7 +147,7 @@ class MultiHeadAttention(nn.Module):
         )
 
         # concatenate heads and put through final linear layer
-        concat = scores.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
+        concat = v_.transpose(1, 2).contiguous().view(bs, -1, self.d_model)
 
         output = self.out_proj(concat)
 
