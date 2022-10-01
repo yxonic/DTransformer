@@ -7,11 +7,18 @@ import torch.nn.functional as F
 
 
 class DTransformer(nn.Module):
-    def __init__(self, n_questions, d_model=256, d_fc=512, n_heads=8, dropout=0.05):
+    def __init__(
+        self, n_questions, n_pid=0, d_model=256, d_fc=512, n_heads=8, dropout=0.05
+    ):
         super().__init__()
         self.n_questions = n_questions
         self.q_embed = nn.Embedding(n_questions + 1, d_model)
         self.s_embed = nn.Embedding(2, d_model)
+
+        if n_pid > 0:
+            self.q_diff_embed = nn.Embedding(n_questions + 1, d_model)
+            self.s_diff_embed = nn.Embedding(2, d_model)
+            self.p_diff_embed = nn.Embedding(n_pid + 1, 1)
 
         self.n_heads = n_heads
         self.block1 = DTransformerLayer(d_model, n_heads, dropout)
@@ -65,24 +72,41 @@ class DTransformer(nn.Module):
 
         return h
 
-    def predict(self, q, s):
+    def predict(self, q, s, pid=None):
         # set prediction mask
-        q = q.masked_fill(s < 0, 0)
+        q = q.masked_fill(q < 0, 0)
         s = s.masked_fill(s < 0, 0)
 
         q_emb = self.q_embed(q)
         s_emb = self.s_embed(s) + q_emb
 
+        if pid is not None:
+            pid = pid.masked_fill(pid < 0, 0)
+            p_diff = self.p_diff_embed(pid)
+
+            q_diff_emb = self.q_diff_embed(q)
+            q_emb += q_diff_emb * p_diff
+
+            s_diff_emb = self.s_diff_embed(s) + q_diff_emb
+            s_emb += s_diff_emb * p_diff
+
         h = self(q_emb, s_emb)
         y = self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
-        return h, y
 
-    def get_loss(self, q, s):
-        _, logits = self.predict(q, s)
+        if pid is not None:
+            return y, h, (p_diff**2).sum() * 1e-5
+        else:
+            return y, h, 0.0
+
+    def get_loss(self, q, s, pid=None):
+        logits, _, reg_loss = self.predict(q, s, pid)
         masked_labels = s[s >= 0].float()
         masked_logits = logits[s >= 0]
-        return F.binary_cross_entropy_with_logits(
-            masked_logits, masked_labels, reduction="sum"
+        return (
+            F.binary_cross_entropy_with_logits(
+                masked_logits, masked_labels, reduction="mean"
+            )
+            + reg_loss
         )
 
 

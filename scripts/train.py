@@ -21,6 +21,7 @@ parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type
 parser.add_argument(
     "-f", "--from_epoch", help="resume training from epoch", default=None
 )
+parser.add_argument("-p", "--with_pid", help="train with pid", action="store_true")
 # load dataset names from configuration
 datasets = tomlkit.load(open(os.path.join(DATA_DIR, "datasets.toml")))
 parser.add_argument(
@@ -51,27 +52,32 @@ def main(args):
     )
 
     # prepare model and optimizer
-    model = DTransformer(dataset["n_questions"])
-    optim = torch.optim.Adam(model.parameters(), lr=0.002, betas=(0.0, 0.999), eps=1e-8)
+    model = DTransformer(dataset["n_questions"], dataset["n_pid"])
+    # optim = torch.optim.Adam(model.parameters(), lr=0.002, betas=(0.0, 0.999))
+    optim = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
     model.to(args.device)
 
     # training
     for epoch in range(args.n_epochs):
+        print("start epoch", epoch + 1)
         model.train()
         it = tqdm(iter(train_data))
         total_loss = 0.0
         total_cnt = 0
         for batch in it:
-            q, s = batch.get("q", "s")
-            for q, s in zip(q, s):
-                loss = model.get_loss(q, s)
+            if args.with_pid:
+                q, s, pid = batch.get("q", "s", "pid")
+            else:
+                q, s = batch.get("q", "s")
+                pid = [None] * len(q)
+            for q, s, pid in zip(q, s, pid):
+                loss = model.get_loss(q, s, pid)
                 optim.zero_grad()
                 loss.backward()
                 optim.step()
                 total_loss += loss.item()
-                total_cnt += (s >= 0).sum().item()
+                total_cnt += 1  # (s >= 0).sum().item()
                 it.set_postfix({"loss": total_loss / total_cnt})
-                break
 
         # validation
         model.eval()
@@ -80,10 +86,14 @@ def main(args):
         with torch.no_grad():
             it = tqdm(iter(valid_data))
             for batch in it:
-                q, s = batch.get("q", "s")
-                for q, s in zip(q, s):
-                    _, pred = model.predict(q, s)
-                    evaluator.evaluate(s, pred)
+                if args.with_pid:
+                    q, s, pid = batch.get("q", "s", "pid")
+                else:
+                    q, s = batch.get("q", "s")
+                    pid = [None] * len(q)
+                for q, s, pid in zip(q, s, pid):
+                    y, *_ = model.predict(q, s, pid)
+                    evaluator.evaluate(s, torch.sigmoid(y))
                 it.set_postfix(evaluator.report())
 
         print(evaluator.report())
