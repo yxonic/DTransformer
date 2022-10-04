@@ -34,6 +34,9 @@ parser.add_argument(
 
 # model setup
 # TODO: model size, dropout rate, etc.
+parser.add_argument(
+    "-s", "--shortcut", help="short-cut attentive readout", action="store_true"
+)
 
 # test setup
 parser.add_argument("-f", "--from_file", help="test existing model file", required=True)
@@ -50,7 +53,9 @@ def main(args):
     )
 
     # prepare model
-    model = DTransformer(dataset["n_questions"], dataset["n_pid"])
+    model = DTransformer(
+        dataset["n_questions"], dataset["n_pid"], shortcut=args.shortcut
+    )
     model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
     model.to(args.device)
     model.eval()

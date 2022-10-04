@@ -18,6 +18,7 @@ class DTransformer(nn.Module):
         d_fc=512,
         n_heads=8,
         dropout=0.05,
+        shortcut=False,
     ):
         super().__init__()
         self.n_questions = n_questions
@@ -50,13 +51,15 @@ class DTransformer(nn.Module):
         )
 
         self.dropout_rate = dropout
+        self.shortcut = shortcut
 
     def forward(self, q_emb, s_emb, lens):
         hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
         hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
 
-        # AKT
-        # return self.block3(hq, hq, hs, peek_cur=False)
+        if self.shortcut:
+            # AKT
+            return self.block3(hq, hq, hs, peek_cur=False)
 
         query = self.know_params.expand_as(hq)
         h = self.block3(query, hq, hs, lens, peek_cur=False)

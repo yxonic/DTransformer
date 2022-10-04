@@ -34,6 +34,9 @@ parser.add_argument(
 
 # model setup
 # TODO: model size, dropout rate, etc.
+parser.add_argument(
+    "-s", "--shortcut", help="short-cut attentive readout", action="store_true"
+)
 
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
@@ -75,7 +78,9 @@ def main(args):
         pass
 
     # prepare model and optimizer
-    model = DTransformer(dataset["n_questions"], dataset["n_pid"])
+    model = DTransformer(
+        dataset["n_questions"], dataset["n_pid"], shortcut=args.shortcut
+    )
     if args.from_file:
         model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
     optim = torch.optim.AdamW(model.parameters(), weight_decay=1e-5)
