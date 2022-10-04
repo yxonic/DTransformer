@@ -109,6 +109,9 @@ class DTransformer(nn.Module):
             + reg_loss
         )
 
+    def get_cl_loss(self, q, s, pid=None):
+        pass
+
 
 class DTransformerLayer(nn.Module):
     def __init__(self, d_model, n_heads, dropout, kq_same=True):

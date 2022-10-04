@@ -14,14 +14,14 @@ MODEL_DIR = "model"
 
 # configure the main parser
 parser = ArgumentParser()
-parser.add_argument("-c", "--config", help="configuration file in TOML", required=True)
 parser.add_argument("--device", help="device to run network on", default="cpu")
 parser.add_argument("-bs", "--batch_size", help="batch size", default=64, type=int)
 parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
-parser.add_argument(
-    "-f", "--from_epoch", help="resume training from epoch", default=None
-)
 parser.add_argument("-p", "--with_pid", help="train with pid", action="store_true")
+parser.add_argument("-d", "--output_dir", help="directory to save model files and logs")
+parser.add_argument(
+    "-f", "--from_file", help="resume training from existing model file", default=None
+)
 # load dataset names from configuration
 datasets = tomlkit.load(open(os.path.join(DATA_DIR, "datasets.toml")))
 parser.add_argument(
@@ -31,7 +31,6 @@ parser.add_argument(
     choices=datasets.keys(),
     required=True,
 )
-
 
 # training logic
 def main(args):
@@ -51,10 +50,19 @@ def main(args):
         batch_size=args.batch_size,
     )
 
+    # prepare logger and output directory
+    # TODO: logger
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
+    else:
+        # TODO: no persistency warning
+        pass
+
     # prepare model and optimizer
     model = DTransformer(dataset["n_questions"], dataset["n_pid"])
-    # optim = torch.optim.Adam(model.parameters(), lr=0.002, betas=(0.0, 0.999))
-    optim = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
+    if args.from_file:
+        model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
+    optim = torch.optim.AdamW(model.parameters(), weight_decay=1e-5)
     model.to(args.device)
 
     # training
@@ -96,7 +104,14 @@ def main(args):
                     evaluator.evaluate(s, torch.sigmoid(y))
                 it.set_postfix(evaluator.report())
 
-        print(evaluator.report())
+        r = evaluator.report()
+        print(r)
+
+        if args.output_dir:
+            model_path = os.path.join(
+                args.output_dir, f'model-{epoch+1}-{r["auc"]:.4f}.pt'
+            )
+            torch.save(model.state_dict(), model_path)
 
 
 if __name__ == "__main__":

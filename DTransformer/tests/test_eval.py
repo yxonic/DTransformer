@@ -10,5 +10,7 @@ def test_evaluator():
     evaluator = Evaluator()
     evaluator.evaluate(y_true, y_pred)
     metrics = evaluator.report()
-    assert metrics["acc"] == 0.5
+    assert metrics["acc"] == 1.0
     assert metrics["auc"] == 1.0
+    assert round(metrics["mae"], 2) == 0.25
+    assert round(metrics["rmse"], 2) == 0.29
