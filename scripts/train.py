@@ -14,15 +14,12 @@ MODEL_DIR = "model"
 
 # configure the main parser
 parser = ArgumentParser()
+
+# general options
 parser.add_argument("--device", help="device to run network on", default="cpu")
 parser.add_argument("-bs", "--batch_size", help="batch size", default=64, type=int)
-parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
-parser.add_argument("-p", "--with_pid", help="train with pid", action="store_true")
-parser.add_argument("-d", "--output_dir", help="directory to save model files and logs")
-parser.add_argument(
-    "-f", "--from_file", help="resume training from existing model file", default=None
-)
-# load dataset names from configuration
+
+# data setup
 datasets = tomlkit.load(open(os.path.join(DATA_DIR, "datasets.toml")))
 parser.add_argument(
     "-d",
@@ -31,6 +28,25 @@ parser.add_argument(
     choices=datasets.keys(),
     required=True,
 )
+parser.add_argument(
+    "-p", "--with_pid", help="provide model with pid", action="store_true"
+)
+
+# model setup
+# TODO: model size, dropout rate, etc.
+
+# training setup
+parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
+parser.add_argument(
+    "-cl", "--cl_loss", help="use contrastive learning loss", action="store_true"
+)
+
+# snapshot setup
+parser.add_argument("-o", "--output_dir", help="directory to save model files and logs")
+parser.add_argument(
+    "-f", "--from_file", help="resume training from existing model file", default=None
+)
+
 
 # training logic
 def main(args):

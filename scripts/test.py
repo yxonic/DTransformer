@@ -14,11 +14,12 @@ DATA_DIR = "data"
 
 # configure the main parser
 parser = ArgumentParser()
-parser.add_argument("-c", "--config", help="configuration file in TOML")
+
+# general options
 parser.add_argument("--device", help="device to run network on", default="cpu")
-parser.add_argument("-bs", "--batch_size", help="batch size", default=64)
-parser.add_argument("-p", "--with_pid", help="train with pid", action="store_true")
-# load dataset names from configuration
+parser.add_argument("-bs", "--batch_size", help="batch size", default=64, type=int)
+
+# data setup
 datasets = tomlkit.load(open(os.path.join(DATA_DIR, "datasets.toml")))
 parser.add_argument(
     "-d",
@@ -27,6 +28,15 @@ parser.add_argument(
     choices=datasets.keys(),
     required=True,
 )
+parser.add_argument(
+    "-p", "--with_pid", help="provide model with pid", action="store_true"
+)
+
+# model setup
+# TODO: model size, dropout rate, etc.
+
+# test setup
+parser.add_argument("-f", "--from_file", help="test existing model file", required=True)
 
 
 # testing logic
@@ -40,7 +50,8 @@ def main(args):
     )
 
     # prepare model
-    model = DTransformer()
+    model = DTransformer(dataset["n_questions"], dataset["n_pid"])
+    model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
     model.to(args.device)
     model.eval()
 
