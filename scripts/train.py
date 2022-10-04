@@ -99,10 +99,12 @@ def main(args):
                     loss = model.get_cl_loss(q, s, pid)
                 else:
                     loss = model.get_loss(q, s, pid)
+
                 optim.zero_grad()
                 loss.backward()
-                # torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optim.step()
+
                 total_loss += loss.item()
                 total_cnt += 1  # (s >= 0).sum().item()
                 it.set_postfix({"loss": total_loss / total_cnt})
@@ -129,7 +131,7 @@ def main(args):
 
         if args.output_dir:
             model_path = os.path.join(
-                args.output_dir, f'model-{epoch+1}-{r["auc"]:.4f}.pt'
+                args.output_dir, f'model-{epoch+1:02d}-{r["auc"]:.4f}.pt'
             )
             torch.save(model.state_dict(), model_path)
 

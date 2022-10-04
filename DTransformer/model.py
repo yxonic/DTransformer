@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+MIN_SEQ_LEN = 5
+
 
 class DTransformer(nn.Module):
     def __init__(
@@ -47,15 +49,17 @@ class DTransformer(nn.Module):
             nn.Linear(256, 1),
         )
 
-    def forward(self, q_emb, s_emb):
-        hq = self.block1(q_emb, q_emb, q_emb, peek_cur=True)
-        hs = self.block2(s_emb, s_emb, s_emb, peek_cur=True)
+        self.dropout_rate = dropout
+
+    def forward(self, q_emb, s_emb, lens):
+        hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
+        hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
 
         # AKT
         # return self.block3(hq, hq, hs, peek_cur=False)
 
         query = self.know_params.expand_as(hq)
-        h = self.block3(query, hq, hs, peek_cur=False)
+        h = self.block3(query, hq, hs, lens, peek_cur=False)
 
         bs, seqlen, d_model = hq.size()
 
@@ -80,6 +84,8 @@ class DTransformer(nn.Module):
         return h
 
     def predict(self, q, s, pid=None):
+        lens = (s >= 0).sum(dim=1)
+
         # set prediction mask
         q = q.masked_fill(q < 0, 0)
         s = s.masked_fill(s < 0, 0)
@@ -97,7 +103,7 @@ class DTransformer(nn.Module):
             s_diff_emb = self.s_diff_embed(s) + q_diff_emb
             s_emb += s_diff_emb * p_diff
 
-        h = self(q_emb, s_emb)
+        h = self(q_emb, s_emb, lens)
         y = self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
 
         if pid is not None:
@@ -117,10 +123,39 @@ class DTransformer(nn.Module):
         )
 
     def get_cl_loss(self, q, s, pid=None):
+        bs = s.size(0)
+        lens = (s >= 0).sum(dim=1)
+        minlen = lens.min().item()
+        if minlen < MIN_SEQ_LEN:
+            # skip CL for batches that are too short
+            return self.get_loss(q, s, pid)
+
         masked_labels = s[s >= 0].float()
 
         # augmentation
-        # TODO: augment q, s
+        q_ = q.clone()
+        s_ = s.clone()
+        if pid is not None:
+            pid_ = pid.clone()
+        else:
+            pid_ = None
+
+        for b in range(bs):
+            # manipulate score
+            idx = random.sample(
+                range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
+            )
+            for i in idx:
+                s_[b, i] = 1 - s_[b, i]
+            # manipulate order
+            idx = random.sample(
+                range(lens[b] - 1), max(1, int(lens[b] * self.dropout_rate))
+            )
+            for i in idx:
+                q_[b, i], q_[b, i + 1] = q_[b, i + 1], q_[b, i]
+                s_[b, i], s_[b, i + 1] = s_[b, i + 1], s_[b, i]
+                if pid_ is not None:
+                    pid_[b, i], pid_[b, i + 1] = pid_[b, i + 1], pid_[b, i]
 
         # model
         logits_1, h_1, reg_loss_1 = self.predict(q, s, pid)
@@ -132,15 +167,11 @@ class DTransformer(nn.Module):
         reg_loss = (reg_loss_1 + reg_loss_2) / 2
 
         # CL loss
-        minlen = (s >= 0).sum(1).min().item()
-        if minlen > 0:
-            input = F.cosine_similarity(
-                h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
-            )
-            target = torch.arange(s.size(0))[:, None].expand(-1, minlen)
-            cl_loss = F.cross_entropy(input, target)
-        else:
-            cl_loss = 0.0
+        input = F.cosine_similarity(
+            h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
+        )
+        target = torch.arange(s.size(0))[:, None].expand(-1, minlen)
+        cl_loss = F.cross_entropy(input, target)
 
         # prediction loss
         pred_loss_1 = F.binary_cross_entropy_with_logits(
@@ -164,7 +195,7 @@ class DTransformerLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model)
 
-    def forward(self, query, key, values, peek_cur=False):
+    def forward(self, query, key, values, lens, peek_cur=False):
         # construct mask
         seqlen = query.size(1)
         mask = torch.ones(seqlen, seqlen).tril(0 if peek_cur else -1)
@@ -173,9 +204,15 @@ class DTransformerLayer(nn.Module):
         # mask manipulation
         if self.training:
             mask = mask.expand(query.size(0), -1, -1, -1)
+
             for b in range(query.size(0)):
                 # sample for each batch
-                idx = random.sample(range(seqlen - 1), int(seqlen * self.dropout_rate))
+                if lens[b] < MIN_SEQ_LEN:
+                    # skip for short sequences
+                    continue
+                idx = random.sample(
+                    range(lens[b] - 1), max(1, int(lens[b] * self.dropout_rate))
+                )
                 for i in idx:
                     mask[b, :, i + 1 :, i] = 0
 
