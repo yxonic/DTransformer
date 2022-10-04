@@ -101,6 +101,7 @@ def main(args):
                     loss = model.get_loss(q, s, pid)
                 optim.zero_grad()
                 loss.backward()
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
                 optim.step()
                 total_loss += loss.item()
                 total_cnt += 1  # (s >= 0).sum().item()

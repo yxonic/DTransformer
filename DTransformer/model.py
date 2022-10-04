@@ -123,17 +123,24 @@ class DTransformer(nn.Module):
         # TODO: augment q, s
 
         # model
-        logits_1, _, reg_loss_1 = self.predict(q, s, pid)
-        masked_logits_1 = logits[s >= 0]
+        logits_1, h_1, reg_loss_1 = self.predict(q, s, pid)
+        masked_logits_1 = logits_1[s >= 0]
 
-        logits_2, _, reg_loss_2 = self.predict(q, s, pid)
-        masked_logits_2 = logits[s >= 0]
+        logits_2, h_2, reg_loss_2 = self.predict(q, s, pid)
+        masked_logits_2 = logits_2[s >= 0]
 
-        reg_loss = reg_loss_1 + reg_loss_2
+        reg_loss = (reg_loss_1 + reg_loss_2) / 2
 
         # CL loss
-        # TODO: calculate CL loss
-        cl_loss = 0.0
+        minlen = (s >= 0).sum(1).min().item()
+        if minlen > 0:
+            input = F.cosine_similarity(
+                h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
+            )
+            target = torch.arange(s.size(0))[:, None].expand(-1, minlen)
+            cl_loss = F.cross_entropy(input, target)
+        else:
+            cl_loss = 0.0
 
         # prediction loss
         pred_loss_1 = F.binary_cross_entropy_with_logits(
@@ -142,10 +149,10 @@ class DTransformer(nn.Module):
         pred_loss_2 = F.binary_cross_entropy_with_logits(
             masked_logits_2, masked_labels, reduction="mean"
         )
-        pred_loss = pred_loss_1 + pred_loss_2
+        pred_loss = (pred_loss_1 + pred_loss_2) / 2
 
         # TODO: weights
-        return cl_loss + pred_loss + reg_loss
+        return cl_loss * 0.1 + pred_loss + reg_loss
 
 
 class DTransformerLayer(nn.Module):
@@ -165,9 +172,12 @@ class DTransformerLayer(nn.Module):
 
         # mask manipulation
         if self.training:
-            idx = random.sample(range(seqlen), int(seqlen * self.dropout_rate))
-            for i in idx:
-                mask[0, 0, idx + 1 :, idx] = 0
+            mask = mask.expand(query.size(0), -1, -1, -1)
+            for b in range(query.size(0)):
+                # sample for each batch
+                idx = random.sample(range(seqlen - 1), int(seqlen * self.dropout_rate))
+                for i in idx:
+                    mask[b, :, i + 1 :, i] = 0
 
         # apply transformer layer
         query_ = self.masked_attn_head(query, key, values, mask)
