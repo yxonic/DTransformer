@@ -41,6 +41,10 @@ parser.add_argument(
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
 parser.add_argument(
+    "-lr", "--learning_rate", help="learning rate", type=float, default=0.01
+)
+parser.add_argument("-l2", help="L2 regularization", type=float, default=1e-5)
+parser.add_argument(
     "-cl", "--cl_loss", help="use contrastive learning loss", action="store_true"
 )
 
@@ -83,7 +87,9 @@ def main(args):
     )
     if args.from_file:
         model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
-    optim = torch.optim.AdamW(model.parameters(), weight_decay=1e-5)
+    optim = torch.optim.AdamW(
+        model.parameters(), lr=args.learning_rate, weight_decay=args.l2
+    )
     model.to(args.device)
 
     # training
