@@ -41,7 +41,7 @@ parser.add_argument(
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
 parser.add_argument(
-    "-lr", "--learning_rate", help="learning rate", type=float, default=0.01
+    "-lr", "--learning_rate", help="learning rate", type=float, default=1e-3
 )
 parser.add_argument("-l2", help="L2 regularization", type=float, default=1e-5)
 parser.add_argument(
