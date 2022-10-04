@@ -144,12 +144,6 @@ class DTransformer(nn.Module):
             pid_ = None
 
         for b in range(bs):
-            # manipulate score
-            idx = random.sample(
-                range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
-            )
-            for i in idx:
-                s_[b, i] = 1 - s_[b, i]
             # manipulate order
             idx = random.sample(
                 range(lens[b] - 1), max(1, int(lens[b] * self.dropout_rate))
@@ -160,11 +154,21 @@ class DTransformer(nn.Module):
                 if pid_ is not None:
                     pid_[b, i], pid_[b, i + 1] = pid_[b, i + 1], pid_[b, i]
 
+        masked_labels_ = s_[s >= 0].float()
+
+        for b in range(bs):
+            # manipulate score
+            idx = random.sample(
+                range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
+            )
+            for i in idx:
+                s_[b, i] = 1 - s_[b, i]
+
         # model
         logits_1, h_1, reg_loss_1 = self.predict(q, s, pid)
         masked_logits_1 = logits_1[s >= 0]
 
-        logits_2, h_2, reg_loss_2 = self.predict(q, s, pid)
+        logits_2, h_2, reg_loss_2 = self.predict(q_, s_, pid_)
         masked_logits_2 = logits_2[s >= 0]
 
         reg_loss = (reg_loss_1 + reg_loss_2) / 2
@@ -181,7 +185,7 @@ class DTransformer(nn.Module):
             masked_logits_1, masked_labels, reduction="mean"
         )
         pred_loss_2 = F.binary_cross_entropy_with_logits(
-            masked_logits_2, masked_labels, reduction="mean"
+            masked_logits_2, masked_labels_, reduction="mean"
         )
         pred_loss = (pred_loss_1 + pred_loss_2) / 2
 

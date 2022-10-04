@@ -87,8 +87,8 @@ def main(args):
     model.to(args.device)
 
     # training
-    for epoch in range(args.n_epochs):
-        print("start epoch", epoch + 1)
+    for epoch in range(1, args.n_epochs + 1):
+        print("start epoch", epoch)
         model.train()
         it = tqdm(iter(train_data))
         total_loss = 0.0
@@ -136,7 +136,7 @@ def main(args):
 
         if args.output_dir:
             model_path = os.path.join(
-                args.output_dir, f'model-{epoch+1:02d}-{r["auc"]:.4f}.pt'
+                args.output_dir, f"model-{epoch:02d}-{r['auc']:.4f}.pt"
             )
             torch.save(model.state_dict(), model_path)
 
