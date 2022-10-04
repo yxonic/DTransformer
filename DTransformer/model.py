@@ -117,7 +117,35 @@ class DTransformer(nn.Module):
         )
 
     def get_cl_loss(self, q, s, pid=None):
-        pass
+        masked_labels = s[s >= 0].float()
+
+        # augmentation
+        # TODO: augment q, s
+
+        # model
+        logits_1, _, reg_loss_1 = self.predict(q, s, pid)
+        masked_logits_1 = logits[s >= 0]
+
+        logits_2, _, reg_loss_2 = self.predict(q, s, pid)
+        masked_logits_2 = logits[s >= 0]
+
+        reg_loss = reg_loss_1 + reg_loss_2
+
+        # CL loss
+        # TODO: calculate CL loss
+        cl_loss = 0.0
+
+        # prediction loss
+        pred_loss_1 = F.binary_cross_entropy_with_logits(
+            masked_logits_1, masked_labels, reduction="mean"
+        )
+        pred_loss_2 = F.binary_cross_entropy_with_logits(
+            masked_logits_2, masked_labels, reduction="mean"
+        )
+        pred_loss = pred_loss_1 + pred_loss_2
+
+        # TODO: weights
+        return cl_loss + pred_loss + reg_loss
 
 
 class DTransformerLayer(nn.Module):

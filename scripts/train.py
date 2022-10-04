@@ -95,7 +95,10 @@ def main(args):
                 q, s = batch.get("q", "s")
                 pid = [None] * len(q)
             for q, s, pid in zip(q, s, pid):
-                loss = model.get_loss(q, s, pid)
+                if args.cl_loss:
+                    loss = model.get_cl_loss(q, s, pid)
+                else:
+                    loss = model.get_loss(q, s, pid)
                 optim.zero_grad()
                 loss.backward()
                 optim.step()
