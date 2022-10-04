@@ -1,4 +1,5 @@
 import math
+import random
 
 import numpy as np
 import torch
@@ -8,7 +9,13 @@ import torch.nn.functional as F
 
 class DTransformer(nn.Module):
     def __init__(
-        self, n_questions, n_pid=0, d_model=256, d_fc=512, n_heads=8, dropout=0.05
+        self,
+        n_questions,
+        n_pid=0,
+        d_model=256,
+        d_fc=512,
+        n_heads=8,
+        dropout=0.05,
     ):
         super().__init__()
         self.n_questions = n_questions
@@ -118,6 +125,7 @@ class DTransformerLayer(nn.Module):
         super().__init__()
         self.masked_attn_head = MultiHeadAttention(d_model, n_heads, kq_same)
 
+        self.dropout_rate = dropout
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model)
 
@@ -126,6 +134,12 @@ class DTransformerLayer(nn.Module):
         seqlen = query.size(1)
         mask = torch.ones(seqlen, seqlen).tril(0 if peek_cur else -1)
         mask = mask.bool()[None, None, :, :]
+
+        # mask manipulation
+        if self.training:
+            idx = random.sample(range(seqlen), int(seqlen * self.dropout_rate))
+            for i in idx:
+                mask[0, 0, idx + 1 :, idx] = 0
 
         # apply transformer layer
         query_ = self.masked_attn_head(query, key, values, mask)
