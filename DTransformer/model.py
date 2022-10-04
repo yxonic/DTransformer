@@ -59,7 +59,7 @@ class DTransformer(nn.Module):
 
         if self.shortcut:
             # AKT
-            return self.block3(hq, hq, hs, peek_cur=False)
+            return self.block3(hq, hq, hs, lens, peek_cur=False)
 
         query = self.know_params.expand_as(hq)
         h = self.block3(query, hq, hs, lens, peek_cur=False)
