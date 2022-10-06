@@ -181,7 +181,11 @@ class DTransformer(nn.Module):
         input = F.cosine_similarity(
             h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
         )
-        target = torch.arange(s.size(0))[:, None].expand(-1, minlen)
+        target = (
+            torch.arange(s.size(0))[:, None]
+            .expand(-1, minlen)
+            .to(self.know_params.device)
+        )
         cl_loss = F.cross_entropy(input, target)
 
         # prediction loss
@@ -210,7 +214,7 @@ class DTransformerLayer(nn.Module):
         # construct mask
         seqlen = query.size(1)
         mask = torch.ones(seqlen, seqlen).tril(0 if peek_cur else -1)
-        mask = mask.bool()[None, None, :, :]
+        mask = mask.bool()[None, None, :, :].to(self.masked_attn_head.gammas.device)
 
         # mask manipulation
         if self.training:

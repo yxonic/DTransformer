@@ -76,6 +76,10 @@ def main(args):
             if seq_len is None:
                 q, s, pid = [q], [s], [pid]
             for q, s, pid in zip(q, s, pid):
+                q = q.to(args.device)
+                s = s.to(args.device)
+                if pid is not None:
+                    pid = pid.to(args.device)
                 y, *_ = model.predict(q, s, pid)
                 evaluator.evaluate(s, torch.sigmoid(y))
             it.set_postfix(evaluator.report())
