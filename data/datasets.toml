@@ -1,9 +1,10 @@
 [ASSIST09]
-train = "2009_skill_builder_data_corrected/train.txt"
-test = "2009_skill_builder_data_corrected/test.txt"
+train = "2009_skill_builder_data_corrected/train_pid.txt"
+test = "2009_skill_builder_data_corrected/test_pid.txt"
 n_questions = 123
 n_pid = 17751
-inputs = ["q", "s"]
+seq_len = 200
+inputs = ["pid", "q", "s"]
 
 [ASSISTchall]
 train = "anonymized_full_release_competition_dataset/train_new.txt"
@@ -13,6 +14,13 @@ n_questions = 102
 n_pid = 3162
 seq_len = 200
 inputs = ["q", "s", "pid", "it", "at"]
+
+[ASSIST09_slice]
+train = "2009_skill_builder_data_corrected/train_pid_slice.txt"
+test = "2009_skill_builder_data_corrected/test_pid_slice.txt"
+n_questions = 123
+n_pid = 17751
+inputs = ["pid", "q", "s"]
 
 [ASSISTchall_slice]
 train = "anonymized_full_release_competition_dataset/train_new_slice.txt"
