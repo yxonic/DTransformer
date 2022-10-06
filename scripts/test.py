@@ -46,9 +46,11 @@ parser.add_argument("-f", "--from_file", help="test existing model file", requir
 def main(args):
     # prepare datasets
     dataset = datasets[args.dataset]
+    seq_len = dataset["seq_len"] if "seq_len" in dataset else None
     test_data = KTData(
         os.path.join(DATA_DIR, dataset["test"]),
         dataset["inputs"],
+        seq_len=seq_len,
         batch_size=args.batch_size,
     )
 
@@ -71,8 +73,11 @@ def main(args):
             else:
                 q, s = batch.get("q", "s")
                 pid = [None] * len(q)
-            y, *_ = model.predict(q, s, pid)
-            evaluator.evaluate(s, torch.sigmoid(y))
+            if seq_len is None:
+                q, s, pid = [q], [s], [pid]
+            for q, s, pid in zip(q, s, pid):
+                y, *_ = model.predict(q, s, pid)
+                evaluator.evaluate(s, torch.sigmoid(y))
             it.set_postfix(evaluator.report())
 
     print(evaluator.report())

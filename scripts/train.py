@@ -59,9 +59,11 @@ parser.add_argument(
 def main(args):
     # prepare dataset
     dataset = datasets[args.dataset]
+    seq_len = dataset["seq_len"] if "seq_len" in dataset else None
     train_data = KTData(
         os.path.join(DATA_DIR, dataset["train"]),
         dataset["inputs"],
+        seq_len=seq_len,
         batch_size=args.batch_size,
         shuffle=True,
     )
@@ -70,6 +72,7 @@ def main(args):
             DATA_DIR, dataset["valid"] if "valid" in dataset else dataset["test"]
         ),
         dataset["inputs"],
+        seq_len=seq_len,
         batch_size=args.batch_size,
     )
 
@@ -105,6 +108,8 @@ def main(args):
             else:
                 q, s = batch.get("q", "s")
                 pid = [None] * len(q)
+            if seq_len is None:
+                q, s, pid = [q], [s], [pid]
             for q, s, pid in zip(q, s, pid):
                 if args.cl_loss:
                     loss = model.get_cl_loss(q, s, pid)
@@ -119,7 +124,6 @@ def main(args):
                 total_loss += loss.item()
                 total_cnt += 1  # (s >= 0).sum().item()
                 it.set_postfix({"loss": total_loss / total_cnt})
-                break
 
         # validation
         model.eval()
@@ -133,8 +137,11 @@ def main(args):
                 else:
                     q, s = batch.get("q", "s")
                     pid = [None] * len(q)
-                y, *_ = model.predict(q, s, pid)
-                evaluator.evaluate(s, torch.sigmoid(y))
+                if seq_len is None:
+                    q, s, pid = [q], [s], [pid]
+                for q, s, pid in zip(q, s, pid):
+                    y, *_ = model.predict(q, s, pid)
+                    evaluator.evaluate(s, torch.sigmoid(y))
                 it.set_postfix(evaluator.report())
 
         r = evaluator.report()

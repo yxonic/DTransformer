@@ -31,7 +31,7 @@ class KTData:
         )
 
 
-def _transform_batch(batch, fields, seq_len):
+def _transform_batch(batch, fields, seq_len=None):
     batch = list(zip(*batch))
     batch = [
         torch.nn.utils.rnn.pad_sequence(
@@ -58,7 +58,7 @@ class Batch:
                     self.data[self.stoi[f]][
                         :, i * self.seq_len : (i + 1) * self.seq_len
                     ]
-                    for i in range(L // self.seq_len)
+                    for i in range(math.ceil(L / self.seq_len))
                 ]
                 for f in fields
             ]

@@ -6,9 +6,17 @@ n_pid = 17751
 inputs = ["q", "s"]
 
 [ASSISTchall]
-train = "anonymized_full_release_competition_dataset/train.txt"
-valid = "anonymized_full_release_competition_dataset/valid.txt"
-test = "anonymized_full_release_competition_dataset/test.txt"
+train = "anonymized_full_release_competition_dataset/train_new.txt"
+# valid = "anonymized_full_release_competition_dataset/valid.txt"
+test = "anonymized_full_release_competition_dataset/test_new.txt"
+n_questions = 102
+n_pid = 3162
+seq_len = 200
+inputs = ["q", "s", "pid", "it", "at"]
+
+[ASSISTchall_slice]
+train = "anonymized_full_release_competition_dataset/train_new_slice.txt"
+test = "anonymized_full_release_competition_dataset/test_new_slice.txt"
 n_questions = 102
 n_pid = 3162
 inputs = ["q", "s", "pid", "it", "at"]
