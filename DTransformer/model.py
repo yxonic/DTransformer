@@ -33,7 +33,8 @@ class DTransformer(nn.Module):
         self.n_heads = n_heads
         self.block1 = DTransformerLayer(d_model, n_heads, dropout)
         self.block2 = DTransformerLayer(d_model, n_heads, dropout)
-        self.block3 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
+        self.block3 = DTransformerLayer(d_model, n_heads, dropout)
+        self.block4 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
 
         self.linear_k = nn.Linear(d_model // n_heads, d_model)
         self.linear_v = nn.Linear(d_model // n_heads, d_model)
@@ -54,15 +55,18 @@ class DTransformer(nn.Module):
         self.shortcut = shortcut
 
     def forward(self, q_emb, s_emb, lens):
-        hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
-        hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-
         if self.shortcut:
             # AKT
+            hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
+            hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
             return self.block3(hq, hq, hs, lens, peek_cur=False)
 
+        hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
+        hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
+        p = self.block3(hq, hq, hs, lens, peek_cur=True)
+
         query = self.know_params.expand_as(hq)
-        h = self.block3(query, hq, hs, lens, peek_cur=False)
+        z = self.block4(query, hq, p, lens, peek_cur=False)
 
         bs, seqlen, d_model = hq.size()
 
@@ -74,7 +78,7 @@ class DTransformer(nn.Module):
             )
         ).view(bs * seqlen, self.n_heads, -1)
         value = torch.sigmoid(
-            self.linear_v(h.view(bs, seqlen, self.n_heads, d_model // self.n_heads))
+            self.linear_v(z.view(bs, seqlen, self.n_heads, d_model // self.n_heads))
         ).view(bs * seqlen, self.n_heads, -1)
 
         beta = torch.matmul(

@@ -119,6 +119,7 @@ def main(args):
                 total_loss += loss.item()
                 total_cnt += 1  # (s >= 0).sum().item()
                 it.set_postfix({"loss": total_loss / total_cnt})
+                break
 
         # validation
         model.eval()
@@ -132,9 +133,8 @@ def main(args):
                 else:
                     q, s = batch.get("q", "s")
                     pid = [None] * len(q)
-                for q, s, pid in zip(q, s, pid):
-                    y, *_ = model.predict(q, s, pid)
-                    evaluator.evaluate(s, torch.sigmoid(y))
+                y, *_ = model.predict(q, s, pid)
+                evaluator.evaluate(s, torch.sigmoid(y))
                 it.set_postfix(evaluator.report())
 
         r = evaluator.report()

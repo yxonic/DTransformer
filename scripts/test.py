@@ -71,9 +71,8 @@ def main(args):
             else:
                 q, s = batch.get("q", "s")
                 pid = [None] * len(q)
-            for q, s, pid in zip(q, s, pid):
-                y, *_ = model.predict(q, s, pid)
-                evaluator.evaluate(s, torch.sigmoid(y))
+            y, *_ = model.predict(q, s, pid)
+            evaluator.evaluate(s, torch.sigmoid(y))
             it.set_postfix(evaluator.report())
 
     print(evaluator.report())

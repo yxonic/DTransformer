@@ -11,7 +11,7 @@ import torch
 
 class KTData:
     def __init__(
-        self, data_path: str, inputs=None, batch_size=None, seq_len=200, shuffle=False
+        self, data_path: str, inputs=None, batch_size=None, seq_len=None, shuffle=False
     ):
         if inputs is None:
             inputs = ["q", "s"]
@@ -45,20 +45,26 @@ def _transform_batch(batch, fields, seq_len):
 
 
 class Batch:
-    def __init__(self, data, fields, seq_len):
+    def __init__(self, data, fields, seq_len=None):
         self.data = data
         self.stoi = {f: i for i, f in enumerate(fields)}
         self.seq_len = seq_len
 
     def get(self, *fields):
         L = self.data[0].size(1)
-        return [
+        return (
             [
-                self.data[self.stoi[f]][:, i * self.seq_len : (i + 1) * self.seq_len]
-                for i in range(L // self.seq_len)
+                [
+                    self.data[self.stoi[f]][
+                        :, i * self.seq_len : (i + 1) * self.seq_len
+                    ]
+                    for i in range(L // self.seq_len)
+                ]
+                for f in fields
             ]
-            for f in fields
-        ]
+            if self.seq_len is not None
+            else [self.data[self.stoi[f]] for f in fields]
+        )
 
 
 class Transform:

@@ -10,7 +10,7 @@ def test_data():
 
     batch_size = 8
     data = KTData(data_path, inputs=["q", "s"], batch_size=batch_size)
-    q, s = next(iter(data)).data
+    q, s = next(iter(data)).get("q", "s")
     assert q.size(0) == batch_size
     assert q.size() == s.size()
 
@@ -28,7 +28,6 @@ def test_data():
         shuffle=True,
     )
     q, s, at = next(iter(data)).get("q", "s", "at")
-    for q, s, at in zip(q, s, at):
-        assert q.size(0) == batch_size
-        assert q.size() == s.size()
-        assert q.size() == at.size()
+    assert q.size(0) == batch_size
+    assert q.size() == s.size()
+    assert q.size() == at.size()
