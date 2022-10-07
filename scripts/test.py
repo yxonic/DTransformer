@@ -58,6 +58,10 @@ def main(args):
         from baselines.DKT import DKT
 
         model = DKT(dataset["n_questions"])
+    elif args.model == "DKVMN":
+        from baselines.DKVMN import DKVMN
+
+        model = DKVMN(dataset["n_questions"], args.batch_size)
     else:
         from DTransformer.model import DTransformer
 

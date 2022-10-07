@@ -42,4 +42,4 @@ class DKT(nn.Module):
         logits, _ = self.predict(q, s)
         masked_labels = s[s >= 0].float()
         masked_logits = logits[s >= 0]
-        return F.binary_cross_entropy(masked_logits, masked_labels)
+        return F.binary_cross_entropy_with_logits(masked_logits, masked_labels)
