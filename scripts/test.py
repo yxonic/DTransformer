@@ -7,8 +7,6 @@ from tqdm import tqdm
 
 from DTransformer.data import KTData
 from DTransformer.eval import Evaluator
-from DTransformer.model import DTransformer
-
 
 DATA_DIR = "data"
 
@@ -37,6 +35,7 @@ parser.add_argument(
 parser.add_argument(
     "-s", "--shortcut", help="short-cut attentive readout", action="store_true"
 )
+parser.add_argument("-m", "--model", help="choose model")
 
 # test setup
 parser.add_argument("-f", "--from_file", help="test existing model file", required=True)
@@ -55,9 +54,17 @@ def main(args):
     )
 
     # prepare model
-    model = DTransformer(
-        dataset["n_questions"], dataset["n_pid"], shortcut=args.shortcut
-    )
+    if args.model == "DKT":
+        from baselines.DKT import DKT
+
+        model = DKT(dataset["n_questions"])
+    else:
+        from DTransformer.model import DTransformer
+
+        model = DTransformer(
+            dataset["n_questions"], dataset["n_pid"], shortcut=args.shortcut
+        )
+
     model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
     model.to(args.device)
     model.eval()
@@ -72,7 +79,7 @@ def main(args):
                 q, s, pid = batch.get("q", "s", "pid")
             else:
                 q, s = batch.get("q", "s")
-                pid = [None] * len(q)
+                pid = None if seq_len is None else [None] * len(q)
             if seq_len is None:
                 q, s, pid = [q], [s], [pid]
             for q, s, pid in zip(q, s, pid):
@@ -82,7 +89,7 @@ def main(args):
                     pid = pid.to(args.device)
                 y, *_ = model.predict(q, s, pid)
                 evaluator.evaluate(s, torch.sigmoid(y))
-            it.set_postfix(evaluator.report())
+            # it.set_postfix(evaluator.report())
 
     print(evaluator.report())
 
