@@ -168,7 +168,7 @@ def main(args):
 
         if args.output_dir:
             model_path = os.path.join(
-                args.output_dir, f"model-{epoch:02d}-{r['auc']:.4f}.pt"
+                args.output_dir, f"model-{epoch:03d}-{r['auc']:.4f}.pt"
             )
             torch.save(model.state_dict(), model_path)
 
