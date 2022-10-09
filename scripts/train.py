@@ -31,14 +31,12 @@ parser.add_argument(
 )
 
 # model setup
-# TODO: model size, dropout rate, etc.
-parser.add_argument(
-    "-s", "--shortcut", help="short-cut attentive readout", action="store_true"
-)
 parser.add_argument("-m", "--model", help="choose model")
+parser.add_argument("--n_layers", help="number of layers", type=int, default=1)
+parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
 
 # training setup
-parser.add_argument("-n", "--n_epochs", help="training epochs", default=50, type=int)
+parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=50)
 parser.add_argument(
     "-lr", "--learning_rate", help="learning rate", type=float, default=1e-3
 )
@@ -92,11 +90,23 @@ def main(args):
         from baselines.DKVMN import DKVMN
 
         model = DKVMN(dataset["n_questions"], args.batch_size)
+    elif args.model == "AKT":
+        from DTransformer.model import DTransformer
+
+        model = DTransformer(
+            dataset["n_questions"],
+            dataset["n_pid"],
+            shortcut=True,
+            dropout=args.dropout,
+        )
     else:
         from DTransformer.model import DTransformer
 
         model = DTransformer(
-            dataset["n_questions"], dataset["n_pid"], shortcut=args.shortcut
+            dataset["n_questions"],
+            dataset["n_pid"],
+            n_layers=args.n_layers,
+            dropout=args.dropout,
         )
 
     if args.from_file:
@@ -163,7 +173,6 @@ def main(args):
                         pid = pid.to(args.device)
                     y, *_ = model.predict(q, s, pid)
                     evaluator.evaluate(s, torch.sigmoid(y))
-                # it.set_postfix(evaluator.report())
 
         r = evaluator.report()
         print(r)

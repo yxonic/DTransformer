@@ -17,7 +17,10 @@ class DTransformer(nn.Module):
         d_model=256,
         d_fc=512,
         n_heads=8,
+        n_know=16,
+        n_layers=1,
         dropout=0.05,
+        lambda_cl=0.1,
         shortcut=False,
     ):
         super().__init__()
@@ -36,9 +39,8 @@ class DTransformer(nn.Module):
         self.block3 = DTransformerLayer(d_model, n_heads, dropout)
         self.block4 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
 
-        self.linear_k = nn.Linear(d_model // n_heads, d_model)
-        self.linear_v = nn.Linear(d_model // n_heads, d_model)
-        self.know_params = nn.Parameter(torch.empty(1, 1, d_model))
+        self.n_know = n_know
+        self.know_params = nn.Parameter(torch.empty(n_know, d_model))
         torch.nn.init.uniform_(self.know_params, -1.0, 1.0)
 
         self.out = nn.Sequential(
@@ -52,7 +54,9 @@ class DTransformer(nn.Module):
         )
 
         self.dropout_rate = dropout
+        self.lambda_cl = lambda_cl
         self.shortcut = shortcut
+        self.n_layers = n_layers
 
     def forward(self, q_emb, s_emb, lens):
         if self.shortcut:
@@ -61,30 +65,43 @@ class DTransformer(nn.Module):
             hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
             return self.block3(hq, hq, hs, lens, peek_cur=False)
 
-        hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
-        hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-        p = self.block3(hq, hq, hs, lens, peek_cur=True)
+        if self.n_layers == 1:
+            hq = q_emb
+            p = self.block1(q_emb, q_emb, s_emb, lens, peek_cur=True)
+        elif self.n_layers == 2:
+            hq = q_emb
+            hs = self.block1(s_emb, s_emb, s_emb, lens, peek_cur=True)
+            p = self.block2(hq, hq, hs, lens, peek_cur=True)
+        else:
+            hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
+            hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
+            p = self.block3(hq, hq, hs, lens, peek_cur=True)
 
-        query = self.know_params.expand_as(hq)
+        bs, seqlen, d_model = p.size()
+        n_know = self.n_know
+
+        query = (
+            self.know_params[None, :, None, :]
+            .expand(bs, -1, seqlen, -1)
+            .view(bs * n_know, seqlen, d_model)
+        )
+        hq = hq.unsqueeze(1).expand(-1, n_know, -1, -1).view_as(query)
+        p = p.unsqueeze(1).expand(-1, n_know, -1, -1).view_as(query)
+
         z = self.block4(query, hq, p, lens, peek_cur=False)
+        z = z.transpose(1, 2)  # (bs, seqlen, n_know, d_model)
 
-        bs, seqlen, d_model = hq.size()
-
-        key = torch.sigmoid(
-            self.linear_k(
-                self.know_params.expand(bs, seqlen, -1).view(
-                    bs, seqlen, self.n_heads, d_model // self.n_heads
-                )
-            )
-        ).view(bs * seqlen, self.n_heads, -1)
-        value = torch.sigmoid(
-            self.linear_v(z.view(bs, seqlen, self.n_heads, d_model // self.n_heads))
-        ).view(bs * seqlen, self.n_heads, -1)
+        key = (
+            self.know_params[None, None, :, :]
+            .expand(bs, seqlen, -1, -1)
+            .view(bs * seqlen, self.n_know, -1)
+        )
+        value = z.view(bs * seqlen, self.n_know, -1)
 
         beta = torch.matmul(
             key,
             q_emb.view(bs * seqlen, -1, 1),
-        ).view(bs * seqlen, 1, self.n_heads)
+        ).view(bs * seqlen, 1, self.n_know)
         alpha = torch.softmax(beta, -1)
         h = torch.matmul(alpha, value).view(bs, seqlen, -1)
 
@@ -198,7 +215,7 @@ class DTransformer(nn.Module):
         pred_loss = (pred_loss_1 + pred_loss_2) / 2
 
         # TODO: weights
-        return cl_loss * 0.1 + pred_loss + reg_loss
+        return cl_loss * self.lambda_cl + pred_loss + reg_loss
 
 
 class DTransformerLayer(nn.Module):

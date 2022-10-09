@@ -32,10 +32,8 @@ parser.add_argument(
 
 # model setup
 # TODO: model size, dropout rate, etc.
-parser.add_argument(
-    "-s", "--shortcut", help="short-cut attentive readout", action="store_true"
-)
 parser.add_argument("-m", "--model", help="choose model")
+parser.add_argument("--n_layers", help="number of layers", type=int, default=1)
 
 # test setup
 parser.add_argument("-f", "--from_file", help="test existing model file", required=True)
@@ -62,11 +60,16 @@ def main(args):
         from baselines.DKVMN import DKVMN
 
         model = DKVMN(dataset["n_questions"], args.batch_size)
+    elif args.model == "AKT":
+        from DTransformer.model import DTransformer
+
+        model = DTransformer(dataset["n_questions"], dataset["n_pid"], shortcut=True)
+
     else:
         from DTransformer.model import DTransformer
 
         model = DTransformer(
-            dataset["n_questions"], dataset["n_pid"], shortcut=args.shortcut
+            dataset["n_questions"], dataset["n_pid"], n_layers=args.n_layers
         )
 
     model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
