@@ -32,6 +32,7 @@ parser.add_argument(
 
 # model setup
 parser.add_argument("-m", "--model", help="choose model")
+parser.add_argument("--d_model", help="model hidden size", type=int, default=128)
 parser.add_argument("--n_layers", help="number of layers", type=int, default=1)
 parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
 
@@ -85,7 +86,7 @@ def main(args):
     if args.model == "DKT":
         from baselines.DKT import DKT
 
-        model = DKT(dataset["n_questions"])
+        model = DKT(dataset["n_questions"], args.d_model)
     elif args.model == "DKVMN":
         from baselines.DKVMN import DKVMN
 
@@ -96,6 +97,7 @@ def main(args):
         model = DTransformer(
             dataset["n_questions"],
             dataset["n_pid"],
+            d_model=args.d_model,
             shortcut=True,
             dropout=args.dropout,
         )
@@ -105,6 +107,7 @@ def main(args):
         model = DTransformer(
             dataset["n_questions"],
             dataset["n_pid"],
+            d_model=args.d_model,
             n_layers=args.n_layers,
             dropout=args.dropout,
         )
