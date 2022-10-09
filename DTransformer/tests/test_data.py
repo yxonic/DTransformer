@@ -2,7 +2,7 @@ from ..data import KTData
 
 
 def test_data():
-    data_path = "data/2009_skill_builder_data_corrected/train.txt"
+    data_path = "data/assist09/train.txt"
 
     data = KTData(data_path, inputs=["q", "s"])
     q, s = next(iter(data))
@@ -14,7 +14,7 @@ def test_data():
     assert q.size(0) == batch_size
     assert q.size() == s.size()
 
-    data_path = "data/anonymized_full_release_competition_dataset/train.txt"
+    data_path = "data/assist17/train.txt"
 
     data = KTData(data_path, inputs=["q", "s", "pid", "it", "at"])
     q, s, pid, it, at = next(iter(data))
