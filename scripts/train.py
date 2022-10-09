@@ -108,6 +108,7 @@ def main(args):
 
     # training
     best = {"auc": 0}
+    best_epoch = 0
     for epoch in range(1, args.n_epochs + 1):
         print("start epoch", epoch)
         model.train()
@@ -168,19 +169,22 @@ def main(args):
         print(r)
         if r["auc"] > best["auc"]:
             best = r
+            best_epoch = epoch
 
         if args.output_dir:
             model_path = os.path.join(
                 args.output_dir, f"model-{epoch:03d}-{r['auc']:.4f}.pt"
             )
+            print("saving snapshot to:", model_path)
             torch.save(model.state_dict(), model_path)
 
-    return best
+    return best_epoch, best
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
-    best = main(args)
+    best_epoch, best = main(args)
     print(args)
-    print(best)
+    print("best epoch:", best_epoch)
+    print("best result", {k: f"{v:.4f}" for k, v in best.items()})
