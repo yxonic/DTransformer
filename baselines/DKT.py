@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class DKT(nn.Module):
-    def __init__(self, n_questions, d_model=10):
+    def __init__(self, n_questions, d_model=100):
         super().__init__()
         self.n_questions = n_questions
         self.d_model = d_model

@@ -107,6 +107,7 @@ def main(args):
     model.to(args.device)
 
     # training
+    best = {"auc": 0}
     for epoch in range(1, args.n_epochs + 1):
         print("start epoch", epoch)
         model.train()
@@ -165,6 +166,8 @@ def main(args):
 
         r = evaluator.report()
         print(r)
+        if r["auc"] > best["auc"]:
+            best = r
 
         if args.output_dir:
             model_path = os.path.join(
@@ -172,8 +175,12 @@ def main(args):
             )
             torch.save(model.state_dict(), model_path)
 
+    return best
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
-    main(args)
+    best = main(args)
+    print(args)
+    print(best)
