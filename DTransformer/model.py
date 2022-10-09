@@ -83,12 +83,14 @@ class DTransformer(nn.Module):
         query = (
             self.know_params[None, :, None, :]
             .expand(bs, -1, seqlen, -1)
-            .view(bs * n_know, seqlen, d_model)
+            .reshape(bs * n_know, seqlen, d_model)
         )
-        hq = hq.unsqueeze(1).expand(-1, n_know, -1, -1).view_as(query)
-        p = p.unsqueeze(1).expand(-1, n_know, -1, -1).view_as(query)
+        hq = hq.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
+        p = p.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
 
-        z = self.block4(query, hq, p, lens, peek_cur=False)
+        z = self.block4(
+            query, hq, p, torch.repeat_interleave(lens, n_know), peek_cur=False
+        )
         z = z.transpose(1, 2)  # (bs, seqlen, n_know, d_model)
 
         key = (
@@ -96,7 +98,7 @@ class DTransformer(nn.Module):
             .expand(bs, seqlen, -1, -1)
             .view(bs * seqlen, self.n_know, -1)
         )
-        value = z.view(bs * seqlen, self.n_know, -1)
+        value = z.reshape(bs * seqlen, self.n_know, -1)
 
         beta = torch.matmul(
             key,
