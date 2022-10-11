@@ -37,6 +37,10 @@ parser.add_argument(
 parser.add_argument("-m", "--model", help="choose model")
 parser.add_argument("--d_model", help="model hidden size", type=int, default=128)
 parser.add_argument("--n_layers", help="number of layers", type=int, default=1)
+parser.add_argument("--n_heads", help="number of heads", type=int, default=8)
+parser.add_argument(
+    "--n_know", help="dimension of knowledge parameter", type=int, default=32
+)
 parser.add_argument("--dropout", help="dropout rate", type=float, default=0.1)
 
 # training setup
@@ -104,6 +108,8 @@ def main(args):
             dataset["n_questions"],
             dataset["n_pid"],
             d_model=args.d_model,
+            n_heads=args.n_heads,
+            n_know=args.n_know,
             shortcut=True,
             dropout=args.dropout,
         )
@@ -115,6 +121,8 @@ def main(args):
             dataset["n_pid"],
             d_model=args.d_model,
             n_layers=args.n_layers,
+            n_heads=args.n_heads,
+            n_know=args.n_know,
             dropout=args.dropout,
         )
 
@@ -205,7 +213,7 @@ def main(args):
             torch.save(model.state_dict(), model_path)
 
         if args.early_stopping and epoch - best_epoch > 5:
-            # early stopping
+            print("did not improve for 5 epochs, stop early")
             break
 
     return best_epoch, best
