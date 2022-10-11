@@ -36,17 +36,20 @@ parser.add_argument(
 # model setup
 parser.add_argument("-m", "--model", help="choose model")
 parser.add_argument("--d_model", help="model hidden size", type=int, default=128)
-parser.add_argument("--n_layers", help="number of layers", type=int, default=1)
+parser.add_argument("--n_layers", help="number of layers", type=int, default=3)
 parser.add_argument("--n_heads", help="number of heads", type=int, default=8)
 parser.add_argument(
     "--n_know", help="dimension of knowledge parameter", type=int, default=32
 )
-parser.add_argument("--dropout", help="dropout rate", type=float, default=0.1)
+parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
 
 # training setup
-parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=50)
+parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=100)
 parser.add_argument(
-    "-es", "--early_stopping", help="early stopping", action="store_true"
+    "--no_early_stop",
+    dest="early_stop",
+    help="prevent early stopping",
+    action="store_false",
 )
 parser.add_argument(
     "-lr", "--learning_rate", help="learning rate", type=float, default=1e-3
@@ -141,6 +144,7 @@ def main(args):
         model.train()
         it = tqdm(iter(train_data))
         total_loss = 0.0
+        total_pred_loss = 0.0
         total_cl_loss = 0.0
         total_cnt = 0
         for batch in it:
@@ -158,7 +162,7 @@ def main(args):
                     pid = pid.to(args.device)
 
                 if args.cl_loss:
-                    loss, cl_loss = model.get_cl_loss(q, s, pid)
+                    loss, pred_loss, cl_loss = model.get_cl_loss(q, s, pid)
                 else:
                     loss = model.get_loss(q, s, pid)
 
@@ -172,7 +176,9 @@ def main(args):
 
                 postfix = {"loss": total_loss / total_cnt}
                 if args.cl_loss:
+                    total_pred_loss += pred_loss.item()
                     total_cl_loss += cl_loss.item()
+                    postfix["pred_loss"] = total_pred_loss / total_cnt
                     postfix["cl_loss"] = total_cl_loss / total_cnt
                 it.set_postfix(postfix)
 
@@ -212,7 +218,7 @@ def main(args):
             print("saving snapshot to:", model_path)
             torch.save(model.state_dict(), model_path)
 
-        if args.early_stopping and epoch - best_epoch > 5:
+        if args.early_stop and epoch - best_epoch > 5:
             print("did not improve for 5 epochs, stop early")
             break
 
