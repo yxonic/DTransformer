@@ -320,7 +320,7 @@ def attention(q, k, v, mask, gamma=None):
         x2 = x1.transpose(0, 1).contiguous()
 
         with torch.no_grad():
-            scores_ = scores.masked_fill(mask == 0, -1e32) * gamma  # temperature
+            scores_ = (scores * gamma.sign()).masked_fill(mask == 0, -1e32)
             scores_ = F.softmax(scores_, dim=-1)
 
             distcum_scores = torch.cumsum(scores_, dim=-1)
@@ -331,9 +331,8 @@ def attention(q, k, v, mask, gamma=None):
             )
             dist_scores = dist_scores.sqrt().detach()
 
-        # gamma = -1.0 * F.softplus(gamma).unsqueeze(0)
-        # total_effect = torch.clamp((dist_scores * gamma).exp(), min=1e-5, max=1e5)
-        total_effect = torch.clamp(dist_scores.exp(), min=1e-5, max=1e5)
+        gamma = -1.0 * gamma.abs().unsqueeze(0)
+        total_effect = torch.clamp((dist_scores * gamma).exp(), min=1e-5, max=1e5)
 
         scores *= total_effect
 
