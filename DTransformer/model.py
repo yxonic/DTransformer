@@ -62,21 +62,21 @@ class DTransformer(nn.Module):
     def forward(self, q_emb, s_emb, lens):
         if self.shortcut:
             # AKT
-            hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
-            hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            return self.block3(hq, hq, hs, lens, peek_cur=False)
+            hq, _ = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
+            hs, scores = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
+            return self.block3(hq, hq, hs, lens, peek_cur=False), scores
 
         if self.n_layers == 1:
             hq = q_emb
-            p = self.block1(q_emb, q_emb, s_emb, lens, peek_cur=True)
+            p, _ = self.block1(q_emb, q_emb, s_emb, lens, peek_cur=True)
         elif self.n_layers == 2:
             hq = q_emb
-            hs = self.block1(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            p = self.block2(hq, hq, hs, lens, peek_cur=True)
+            hs, _ = self.block1(s_emb, s_emb, s_emb, lens, peek_cur=True)
+            p, _ = self.block2(hq, hq, hs, lens, peek_cur=True)
         else:
-            hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
-            hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            p = self.block3(hq, hq, hs, lens, peek_cur=True)
+            hq, _ = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
+            hs, _ = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
+            p, _ = self.block3(hq, hq, hs, lens, peek_cur=True)
 
         bs, seqlen, d_model = p.size()
         n_know = self.n_know
@@ -89,10 +89,11 @@ class DTransformer(nn.Module):
         hq = hq.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
         p = p.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
 
-        z = self.block4(
+        z, scores = self.block4(
             query, hq, p, torch.repeat_interleave(lens, n_know), peek_cur=False
         )
         z = z.transpose(1, 2)  # (bs, seqlen, n_know, d_model)
+        scores = scores[:, :, -1, :]  # (bs, n_know, seqlen)
 
         key = (
             self.know_params[None, None, :, :]
@@ -108,7 +109,7 @@ class DTransformer(nn.Module):
         alpha = torch.softmax(beta, -1)
         h = torch.matmul(alpha, value).view(bs, seqlen, -1)
 
-        return h
+        return h, scores
 
     def predict(self, q, s, pid=None, n=1):
         lens = (s >= 0).sum(dim=1)
@@ -130,7 +131,7 @@ class DTransformer(nn.Module):
             s_diff_emb = self.s_diff_embed(s) + q_diff_emb
             s_emb += s_diff_emb * p_diff
 
-        h = self(q_emb, s_emb, lens)
+        h, _ = self(q_emb, s_emb, lens)
         y = self.out(
             torch.cat([q_emb[:, n - 1 :, :], h[:, : h.size(1) - n + 1, :]], dim=-1)
         ).squeeze(-1)
@@ -255,9 +256,9 @@ class DTransformerLayer(nn.Module):
                     mask[b, :, i + 1 :, i] = 0
 
         # apply transformer layer
-        query_ = self.masked_attn_head(query, key, values, mask)
+        query_, scores = self.masked_attn_head(query, key, values, mask)
         query = query + self.dropout(query_)
-        return self.layer_norm(query)
+        return self.layer_norm(query), scores
 
 
 class MultiHeadAttention(nn.Module):
@@ -292,7 +293,7 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2)
 
         # calculate attention using function we will define next
-        v_ = attention(
+        v_, scores = attention(
             q,
             k,
             v,
@@ -305,7 +306,7 @@ class MultiHeadAttention(nn.Module):
 
         output = self.out_proj(concat)
 
-        return output
+        return output, scores
 
 
 def attention(q, k, v, mask, gamma=None):
@@ -347,4 +348,4 @@ def attention(q, k, v, mask, gamma=None):
 
     # calculate output
     output = torch.matmul(scores, v)
-    return output
+    return output, scores
