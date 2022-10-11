@@ -42,6 +42,9 @@ parser.add_argument("--dropout", help="dropout rate", type=float, default=0.1)
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=50)
 parser.add_argument(
+    "-es", "--early_stopping", help="early stopping", action="store_true"
+)
+parser.add_argument(
     "-lr", "--learning_rate", help="learning rate", type=float, default=1e-3
 )
 parser.add_argument("-l2", help="L2 regularization", type=float, default=1e-5)
@@ -193,6 +196,7 @@ def main(args):
 
         r = evaluator.report()
         print(r)
+
         if r["auc"] > best["auc"]:
             best = r
             best_epoch = epoch
@@ -203,6 +207,10 @@ def main(args):
             )
             print("saving snapshot to:", model_path)
             torch.save(model.state_dict(), model_path)
+
+        if args.early_stopping and epoch - best_epoch > 5:
+            # early stopping
+            break
 
     return best_epoch, best
 
