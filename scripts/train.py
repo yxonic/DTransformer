@@ -153,7 +153,6 @@ def main(args):
                     loss, cl_loss = model.get_cl_loss(q, s, pid)
                 else:
                     loss = model.get_loss(q, s, pid)
-                    cl_loss = None
 
                 optim.zero_grad()
                 loss.backward()
@@ -161,16 +160,13 @@ def main(args):
                 optim.step()
 
                 total_loss += loss.item()
-                if cl_loss is not None:
-                    total_cl_loss += cl_loss.item()
                 total_cnt += 1  # (s >= 0).sum().item()
 
-                it.set_postfix(
-                    {
-                        "loss": total_loss / total_cnt,
-                        "cl_loss": total_cl_loss / total_cnt,
-                    }
-                )
+                postfix = {"loss": total_loss / total_cnt}
+                if args.cl_loss:
+                    total_cl_loss += cl_loss.item()
+                    postfix["cl_loss"] = total_cl_loss / total_cnt
+                it.set_postfix(postfix)
 
         # validation
         model.eval()
