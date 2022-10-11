@@ -185,7 +185,8 @@ class DTransformer(nn.Module):
                 range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
             )
             for i in idx:
-                s_[b, i] = 1 - s_[b, i]
+                if s_[b, i].item() == 1:
+                    s_[b, i] = 0
 
         # model
         logits_1, h_1, reg_loss_1 = self.predict(q, s, pid)
@@ -217,7 +218,7 @@ class DTransformer(nn.Module):
         pred_loss = (pred_loss_1 + pred_loss_2) / 2
 
         # TODO: weights
-        return cl_loss * self.lambda_cl + pred_loss + reg_loss
+        return cl_loss * self.lambda_cl + pred_loss + reg_loss, cl_loss
 
 
 class DTransformerLayer(nn.Module):
