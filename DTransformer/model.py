@@ -46,12 +46,12 @@ class DTransformer(nn.Module):
 
         self.out = nn.Sequential(
             nn.Linear(d_model * 2, d_fc),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(d_fc, 256),
-            nn.ReLU(),
+            nn.Linear(d_fc, d_fc // 2),
+            nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(256, 1),
+            nn.Linear(d_fc // 2, 1),
         )
 
         self.dropout_rate = dropout
@@ -202,8 +202,11 @@ class DTransformer(nn.Module):
         reg_loss = (reg_loss_1 + reg_loss_2) / 2
 
         # CL loss
-        input = F.cosine_similarity(
-            h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
+        input = (
+            F.cosine_similarity(
+                h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
+            )
+            / 0.05
         )
         target = (
             torch.arange(s.size(0))[:, None]
