@@ -46,10 +46,10 @@ parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=100)
 parser.add_argument(
-    "--no_early_stop",
-    dest="early_stop",
-    help="prevent early stopping",
-    action="store_false",
+    "--early_stop",
+    help="early stop after N epochs of no improvements",
+    type=int,
+    default=5,
 )
 parser.add_argument(
     "-lr", "--learning_rate", help="learning rate", type=float, default=1e-3
@@ -218,8 +218,8 @@ def main(args):
             print("saving snapshot to:", model_path)
             torch.save(model.state_dict(), model_path)
 
-        if args.early_stop and epoch - best_epoch > 5:
-            print("did not improve for 5 epochs, stop early")
+        if args.early_stop > 0 and epoch - best_epoch > args.early_stop:
+            print(f"did not improve for {args.early_stop} epochs, stop early")
             break
 
     return best_epoch, best
