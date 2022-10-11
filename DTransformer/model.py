@@ -241,7 +241,7 @@ class DTransformerLayer(nn.Module):
 
         # mask manipulation
         if self.training:
-            mask = mask.expand(query.size(0), -1, -1, -1)
+            mask = mask.expand(query.size(0), -1, -1, -1).contiguous()
 
             for b in range(query.size(0)):
                 # sample for each batch
@@ -320,7 +320,7 @@ def attention(q, k, v, mask, gamma=None):
         x2 = x1.transpose(0, 1).contiguous()
 
         with torch.no_grad():
-            scores_ = scores.masked_fill(mask == 0, -1e32)
+            scores_ = (scores * gamma.sign()).masked_fill(mask == 0, -1e32)
             scores_ = F.softmax(scores_, dim=-1)
 
             distcum_scores = torch.cumsum(scores_, dim=-1)
@@ -331,7 +331,7 @@ def attention(q, k, v, mask, gamma=None):
             )
             dist_scores = dist_scores.sqrt().detach()
 
-        gamma = -1.0 * F.softplus(gamma).unsqueeze(0)
+        gamma = -1.0 * gamma.abs().unsqueeze(0)
         total_effect = torch.clamp((dist_scores * gamma).exp(), min=1e-5, max=1e5)
 
         scores *= total_effect
@@ -340,6 +340,10 @@ def attention(q, k, v, mask, gamma=None):
     scores.masked_fill_(mask == 0, -1e32)
     scores = F.softmax(scores, dim=-1)
     scores = scores.masked_fill(mask == 0, 0)  # set to hard zero to avoid leakage
+
+    # max-out scores (bs, n_heads, seqlen, seqlen)
+    scale = torch.clamp(1.0 / scores.max(dim=-1, keepdim=True)[0], max=10.0)
+    scores *= scale
 
     # calculate output
     output = torch.matmul(scores, v)
