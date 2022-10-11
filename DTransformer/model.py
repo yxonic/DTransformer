@@ -225,7 +225,7 @@ class DTransformer(nn.Module):
         pred_loss = (pred_loss_1 + pred_loss_2) / 2
 
         # TODO: weights
-        return cl_loss * self.lambda_cl + pred_loss + reg_loss, cl_loss
+        return pred_loss + cl_loss * self.lambda_cl + reg_loss, pred_loss, cl_loss
 
 
 class DTransformerLayer(nn.Module):
@@ -324,7 +324,9 @@ def attention(q, k, v, mask, gamma=None):
         x2 = x1.transpose(0, 1).contiguous()
 
         with torch.no_grad():
-            scores_ = (scores * gamma.sign()).masked_fill(mask == 0, -1e32)
+            ones = torch.ones(head // 2, 1, 1).to(gamma.device)
+            sign = torch.concat([ones, -ones])
+            scores_ = (scores * sign).masked_fill(mask == 0, -1e32)
             scores_ = F.softmax(scores_, dim=-1)
 
             distcum_scores = torch.cumsum(scores_, dim=-1)
