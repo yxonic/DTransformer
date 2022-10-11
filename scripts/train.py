@@ -15,7 +15,10 @@ parser = ArgumentParser()
 
 # general options
 parser.add_argument("--device", help="device to run network on", default="cpu")
-parser.add_argument("-bs", "--batch_size", help="batch size", default=64, type=int)
+parser.add_argument("-bs", "--batch_size", help="batch size", default=8, type=int)
+parser.add_argument(
+    "-tbs", "--test_batch_size", help="test batch size", default=64, type=int
+)
 
 # data setup
 datasets = tomlkit.load(open(os.path.join(DATA_DIR, "datasets.toml")))
@@ -34,7 +37,7 @@ parser.add_argument(
 parser.add_argument("-m", "--model", help="choose model")
 parser.add_argument("--d_model", help="model hidden size", type=int, default=128)
 parser.add_argument("--n_layers", help="number of layers", type=int, default=1)
-parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
+parser.add_argument("--dropout", help="dropout rate", type=float, default=0.1)
 
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=50)
@@ -71,7 +74,7 @@ def main(args):
         ),
         dataset["inputs"],
         seq_len=seq_len,
-        batch_size=args.batch_size,
+        batch_size=args.test_batch_size,
     )
 
     # prepare logger and output directory
