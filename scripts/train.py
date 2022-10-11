@@ -46,6 +46,7 @@ parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=100)
 parser.add_argument(
+    "-es",
     "--early_stop",
     help="early stop after N epochs of no improvements",
     type=int,
