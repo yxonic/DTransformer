@@ -24,7 +24,7 @@ class DKT(nn.Module):
         res = torch.sigmoid(self.fc(out))[:, :-1, :]
         return res
 
-    def predict(self, q, s, pid=None):
+    def predict(self, q, s, pid=None, n=1):
         assert pid is None, "DKT does not support pid input"
         q = q.masked_fill(q < 0, 0)
         s = s.masked_fill(s < 0, 0)
@@ -34,7 +34,12 @@ class DKT(nn.Module):
             .to(self.device())
         )
         h = self(x)
-        y = h.gather(-1, q.unsqueeze(-1)).squeeze(-1)
+        print(h.size(), q.size())
+        y = (
+            h[:, : h.size(1) - n + 1, :]
+            .gather(-1, q[:, n - 1 :].unsqueeze(-1))
+            .squeeze(-1)
+        )
         return y, h
 
     def get_loss(self, q, s, pid=None):

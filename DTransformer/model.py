@@ -38,6 +38,7 @@ class DTransformer(nn.Module):
         self.block2 = DTransformerLayer(d_model, n_heads, dropout)
         self.block3 = DTransformerLayer(d_model, n_heads, dropout)
         self.block4 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
+        self.block5 = DTransformerLayer(d_model, n_heads, dropout)
 
         self.n_know = n_know
         self.know_params = nn.Parameter(torch.empty(n_know, d_model))
@@ -109,7 +110,7 @@ class DTransformer(nn.Module):
 
         return h
 
-    def predict(self, q, s, pid=None):
+    def predict(self, q, s, pid=None, n=1):
         lens = (s >= 0).sum(dim=1)
 
         # set prediction mask
@@ -130,7 +131,9 @@ class DTransformer(nn.Module):
             s_emb += s_diff_emb * p_diff
 
         h = self(q_emb, s_emb, lens)
-        y = self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
+        y = self.out(
+            torch.cat([q_emb[:, n - 1 :, :], h[:, : h.size(1) - n + 1, :]], dim=-1)
+        ).squeeze(-1)
 
         if pid is not None:
             return y, h, (p_diff**2).sum() * 1e-5
