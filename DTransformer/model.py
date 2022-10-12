@@ -97,6 +97,7 @@ class DTransformer(nn.Module):
             z.view(bs, n_know, seqlen, d_model)  # unpack dimensions
             .transpose(1, 2)  # (bs, seqlen, n_know, d_model)
             .contiguous()
+            .view(bs, seqlen, -1)
         )
         k_scores = (
             k_scores.view(bs, n_know, self.n_heads, seqlen, seqlen)  # unpack dimensions
@@ -118,7 +119,7 @@ class DTransformer(nn.Module):
         alpha = torch.softmax(beta, -1)
         h = torch.matmul(alpha, value).view(bs, seqlen, -1)
 
-        return h, q_scores, k_scores
+        return h, z, q_scores, k_scores
 
     def predict(self, q, s, pid=None, n=1):
         lens = (s >= 0).sum(dim=1)
@@ -140,15 +141,15 @@ class DTransformer(nn.Module):
             s_diff_emb = self.s_diff_embed(s) + q_diff_emb
             s_emb += s_diff_emb * p_diff
 
-        h, q_scores, k_scores = self(q_emb, s_emb, lens)
+        h, z, q_scores, k_scores = self(q_emb, s_emb, lens)
         y = self.out(
             torch.cat([q_emb[:, n - 1 :, :], h[:, : h.size(1) - n + 1, :]], dim=-1)
         ).squeeze(-1)
 
         if pid is not None:
-            return y, h, (p_diff**2).sum() * 1e-5, (q_scores, k_scores)
+            return y, z, (p_diff**2).sum() * 1e-5, (q_scores, k_scores)
         else:
-            return y, h, 0.0, (q_scores, k_scores)
+            return y, z, 0.0, (q_scores, k_scores)
 
     def get_loss(self, q, s, pid=None):
         logits, _, reg_loss, _ = self.predict(q, s, pid)
@@ -202,10 +203,10 @@ class DTransformer(nn.Module):
                     s_[b, i] = 0
 
         # model
-        logits_1, h_1, reg_loss_1, _ = self.predict(q, s, pid)
+        logits_1, z_1, reg_loss_1, _ = self.predict(q, s, pid)
         masked_logits_1 = logits_1[s >= 0]
 
-        logits_2, h_2, reg_loss_2, _ = self.predict(q_, s_, pid_)
+        logits_2, z_2, reg_loss_2, _ = self.predict(q_, s_, pid_)
         masked_logits_2 = logits_2[s >= 0]
 
         reg_loss = (reg_loss_1 + reg_loss_2) / 2
@@ -213,14 +214,16 @@ class DTransformer(nn.Module):
         # CL loss
         input = (
             F.cosine_similarity(
-                h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
+                z_1[:, None, :minlen, :],
+                z_2[None, :, :minlen, :],
+                dim=-1,
             )
             / 0.05
         )
         target = (
             torch.arange(s.size(0))[:, None]
-            .expand(-1, minlen)
             .to(self.know_params.device)
+            .expand(-1, minlen)
         )
         cl_loss = F.cross_entropy(input, target)
 
