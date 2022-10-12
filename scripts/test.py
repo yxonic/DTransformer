@@ -75,7 +75,6 @@ def main(args):
             n_heads=args.n_heads,
             n_know=args.n_know,
             shortcut=True,
-            dropout=args.dropout,
         )
     else:
         from DTransformer.model import DTransformer
@@ -87,7 +86,6 @@ def main(args):
             n_heads=args.n_heads,
             n_know=args.n_know,
             n_layers=args.n_layers,
-            dropout=args.dropout,
         )
 
     model.load_state_dict(torch.load(args.from_file, map_location=lambda s, _: s))
