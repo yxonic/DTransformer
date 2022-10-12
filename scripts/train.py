@@ -51,7 +51,7 @@ parser.add_argument(
     "--early_stop",
     help="early stop after N epochs of no improvements",
     type=int,
-    default=5,
+    default=10,
 )
 parser.add_argument(
     "-lr", "--learning_rate", help="learning rate", type=float, default=1e-3
