@@ -1,4 +1,5 @@
 import os
+import json
 from argparse import ArgumentParser
 
 import torch
@@ -92,6 +93,8 @@ def main(args):
     # TODO: logger
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
+        config_path = os.path.join(args.output_dir, "config.json")
+        json.dump(vars(args), open(config_path, "w"), indent=2)
     else:
         # TODO: no persistency warning
         pass
