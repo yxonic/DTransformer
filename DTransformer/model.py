@@ -64,19 +64,19 @@ class DTransformer(nn.Module):
             # AKT
             hq, _ = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
             hs, scores = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            return self.block3(hq, hq, hs, lens, peek_cur=False), scores
+            return self.block3(hq, hq, hs, lens, peek_cur=False), scores, None
 
         if self.n_layers == 1:
             hq = q_emb
-            p, _ = self.block1(q_emb, q_emb, s_emb, lens, peek_cur=True)
+            p, q_scores = self.block1(q_emb, q_emb, s_emb, lens, peek_cur=True)
         elif self.n_layers == 2:
             hq = q_emb
             hs, _ = self.block1(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            p, _ = self.block2(hq, hq, hs, lens, peek_cur=True)
+            p, q_scores = self.block2(hq, hq, hs, lens, peek_cur=True)
         else:
             hq, _ = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
             hs, _ = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            p, _ = self.block3(hq, hq, hs, lens, peek_cur=True)
+            p, q_scores = self.block3(hq, hq, hs, lens, peek_cur=True)
 
         bs, seqlen, d_model = p.size()
         n_know = self.n_know
@@ -84,23 +84,32 @@ class DTransformer(nn.Module):
         query = (
             self.know_params[None, :, None, :]
             .expand(bs, -1, seqlen, -1)
-            .reshape(bs * n_know, seqlen, d_model)
+            .contiguous()
+            .view(bs * n_know, seqlen, d_model)
         )
         hq = hq.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
         p = p.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
 
-        z, scores = self.block4(
+        z, k_scores = self.block4(
             query, hq, p, torch.repeat_interleave(lens, n_know), peek_cur=False
         )
-        z = z.transpose(1, 2)  # (bs, seqlen, n_know, d_model)
-        scores = scores[:, :, -1, :]  # (bs, n_know, seqlen)
+        z = (
+            z.view(bs, n_know, seqlen, d_model)  # unpack dimensions
+            .transpose(1, 2)  # (bs, seqlen, n_know, d_model)
+            .contiguous()
+        )
+        k_scores = (
+            k_scores.view(bs, n_know, self.n_heads, seqlen, seqlen)  # unpack dimensions
+            .permute(0, 2, 3, 1, 4)  # (bs, n_heads, seqlen, n_know, seqlen)
+            .contiguous()
+        )
 
         key = (
             self.know_params[None, None, :, :]
             .expand(bs, seqlen, -1, -1)
             .view(bs * seqlen, self.n_know, -1)
         )
-        value = z.reshape(bs * seqlen, self.n_know, -1)
+        value = z.view(bs * seqlen, self.n_know, -1)
 
         beta = torch.matmul(
             key,
@@ -109,7 +118,7 @@ class DTransformer(nn.Module):
         alpha = torch.softmax(beta, -1)
         h = torch.matmul(alpha, value).view(bs, seqlen, -1)
 
-        return h, scores
+        return h, q_scores, k_scores
 
     def predict(self, q, s, pid=None, n=1):
         lens = (s >= 0).sum(dim=1)
@@ -131,18 +140,18 @@ class DTransformer(nn.Module):
             s_diff_emb = self.s_diff_embed(s) + q_diff_emb
             s_emb += s_diff_emb * p_diff
 
-        h, _ = self(q_emb, s_emb, lens)
+        h, q_scores, k_scores = self(q_emb, s_emb, lens)
         y = self.out(
             torch.cat([q_emb[:, n - 1 :, :], h[:, : h.size(1) - n + 1, :]], dim=-1)
         ).squeeze(-1)
 
         if pid is not None:
-            return y, h, (p_diff**2).sum() * 1e-5
+            return y, h, (p_diff**2).sum() * 1e-5, (q_scores, k_scores)
         else:
-            return y, h, 0.0
+            return y, h, 0.0, (q_scores, k_scores)
 
     def get_loss(self, q, s, pid=None):
-        logits, _, reg_loss = self.predict(q, s, pid)
+        logits, _, reg_loss, _ = self.predict(q, s, pid)
         masked_labels = s[s >= 0].float()
         masked_logits = logits[s >= 0]
         return (
@@ -193,10 +202,10 @@ class DTransformer(nn.Module):
                     s_[b, i] = 0
 
         # model
-        logits_1, h_1, reg_loss_1 = self.predict(q, s, pid)
+        logits_1, h_1, reg_loss_1, _ = self.predict(q, s, pid)
         masked_logits_1 = logits_1[s >= 0]
 
-        logits_2, h_2, reg_loss_2 = self.predict(q_, s_, pid_)
+        logits_2, h_2, reg_loss_2, _ = self.predict(q_, s_, pid_)
         masked_logits_2 = logits_2[s >= 0]
 
         reg_loss = (reg_loss_1 + reg_loss_2) / 2
