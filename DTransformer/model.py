@@ -104,32 +104,18 @@ class DTransformer(nn.Module):
             .permute(0, 2, 3, 1, 4)  # (bs, n_heads, seqlen, n_know, seqlen)
             .contiguous()
         )
+        return z, q_scores, k_scores
 
-        key = (
-            self.know_params[None, None, :, :]
-            .expand(bs, seqlen, -1, -1)
-            .view(bs * seqlen, self.n_know, -1)
-        )
-        value = z.view(bs * seqlen, self.n_know, -1)
-
-        beta = torch.matmul(
-            key,
-            q_emb.view(bs * seqlen, -1, 1),
-        ).view(bs * seqlen, 1, self.n_know)
-        alpha = torch.softmax(beta, -1)
-        h = torch.matmul(alpha, value).view(bs, seqlen, -1)
-
-        return h, z, q_scores, k_scores
-
-    def predict(self, q, s, pid=None, n=1):
+    def embedding(self, q, s, pid=None):
         lens = (s >= 0).sum(dim=1)
-
         # set prediction mask
         q = q.masked_fill(q < 0, 0)
         s = s.masked_fill(s < 0, 0)
 
         q_emb = self.q_embed(q)
         s_emb = self.s_embed(s) + q_emb
+
+        p_diff = 0.0
 
         if pid is not None:
             pid = pid.masked_fill(pid < 0, 0)
@@ -141,10 +127,37 @@ class DTransformer(nn.Module):
             s_diff_emb = self.s_diff_embed(s) + q_diff_emb
             s_emb += s_diff_emb * p_diff
 
-        h, z, q_scores, k_scores = self(q_emb, s_emb, lens)
-        y = self.out(
-            torch.cat([q_emb[:, n - 1 :, :], h[:, : h.size(1) - n + 1, :]], dim=-1)
-        ).squeeze(-1)
+        return q_emb, s_emb, lens, p_diff
+
+    def readout(self, z, query):
+        bs, seqlen, _ = query.size()
+        key = (
+            self.know_params[None, None, :, :]
+            .expand(bs, seqlen, -1, -1)
+            .view(bs * seqlen, self.n_know, -1)
+        )
+        value = z[:, :seqlen, :].view(bs * seqlen, self.n_know, -1)
+
+        beta = torch.matmul(
+            key,
+            query.view(bs * seqlen, -1, 1),
+        ).view(bs * seqlen, 1, self.n_know)
+        alpha = torch.softmax(beta, -1)
+        return torch.matmul(alpha, value).view(bs, seqlen, -1)
+
+    def predict(self, q, s, pid=None, n=1):
+        q_emb, s_emb, lens, p_diff = self.embedding(q, s, pid)
+        z, q_scores, k_scores = self(q_emb, s_emb, lens)
+
+        # predict T+N
+        if self.shortcut:
+            assert n == 1, "AKT does not support T+N prediction"
+            h = z
+        else:
+            query = q_emb[:, n - 1 :, :]
+            h = self.readout(z, query)
+
+        y = self.out(torch.cat([query, h], dim=-1)).squeeze(-1)
 
         if pid is not None:
             return y, z, (p_diff**2).sum() * 1e-5, (q_scores, k_scores)
