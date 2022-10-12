@@ -17,18 +17,24 @@ class KTData:
             inputs = ["q", "s"]
         self.inputs = inputs
         self.data = Lines(data_path, group=len(inputs) + 1)
+        self.transform = Transform(self.data, inputs, seq_len)
         self.batch_size = batch_size
         self.seq_len = seq_len
         self.shuffle = shuffle
 
     def __iter__(self):
         return Iterator(
-            Transform(self.data, self.inputs, self.seq_len),
+            self.transform,
             batch_size=self.batch_size,
             full_shuffle=self.shuffle,
-            transform=lambda x: _transform_batch(x, self.inputs, self.seq_len),
+            transform=lambda x: _transform_batch(
+                [d.data for d in x], self.inputs, self.seq_len
+            ),
             prefetch=True,
         )
+
+    def __getitem__(self, index):
+        return self.transform[index]
 
 
 def _transform_batch(batch, fields, seq_len=None):
@@ -41,17 +47,18 @@ def _transform_batch(batch, fields, seq_len=None):
         )
         for item in batch
     ]
-    return Batch(batch, fields, seq_len)
+    return Batch(batch, fields, batch[0].size(1), seq_len)
 
 
 class Batch:
-    def __init__(self, data, fields, seq_len=None):
+    def __init__(self, data, fields, length, seq_len=None):
         self.data = data
         self.stoi = {f: i for i, f in enumerate(fields)}
+        self.length = length
         self.seq_len = seq_len
 
     def get(self, *fields):
-        L = self.data[0].size(1)
+        L = self.length
         return (
             [
                 [
@@ -83,7 +90,11 @@ class Transform:
         if isinstance(index, int):
             del batch[0]  # remove count
             items = [[int(x) for x in line.strip().split(",")] for line in batch]
-            return [torch.tensor(item) for item in items]
+            return Batch(
+                [torch.tensor(item) for item in items],
+                self.inputs,
+                len(items[0]),
+            )
 
         # batch
         items = []
