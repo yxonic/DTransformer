@@ -222,7 +222,8 @@ class DTransformer(nn.Module):
         logits_2, z_2, reg_loss_2, _ = self.predict(q_, s_, pid_)
         masked_logits_2 = logits_2[s >= 0]
 
-        reg_loss = (reg_loss_1 + reg_loss_2) / 2
+        reg_loss = reg_loss_1
+        # reg_loss = (reg_loss_1 + reg_loss_2) / 2
 
         # CL loss
         input = (
@@ -241,13 +242,13 @@ class DTransformer(nn.Module):
         cl_loss = F.cross_entropy(input, target)
 
         # prediction loss
-        pred_loss_1 = F.binary_cross_entropy_with_logits(
+        pred_loss = F.binary_cross_entropy_with_logits(
             masked_logits_1, masked_labels, reduction="mean"
         )
-        pred_loss_2 = F.binary_cross_entropy_with_logits(
-            masked_logits_2, masked_labels_, reduction="mean"
-        )
-        pred_loss = (pred_loss_1 + pred_loss_2) / 2
+        # pred_loss_2 = F.binary_cross_entropy_with_logits(
+        #     masked_logits_2, masked_labels_, reduction="mean"
+        # )
+        # pred_loss = (pred_loss_1 + pred_loss_2) / 2
 
         # TODO: weights
         return pred_loss + cl_loss * self.lambda_cl + reg_loss, pred_loss, cl_loss
