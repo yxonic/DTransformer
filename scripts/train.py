@@ -44,6 +44,9 @@ parser.add_argument(
 )
 parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
 parser.add_argument("--proj", help="projection layer before CL", action="store_true")
+parser.add_argument(
+    "--hard_neg", help="use hard negative samples in CL", action="store_true"
+)
 
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=100)
@@ -137,6 +140,7 @@ def main(args):
             lambda_cl=args.lambda_cl,
             dropout=args.dropout,
             proj=args.proj,
+            hard_neg=args.hard_neg,
         )
 
     if args.from_file:
