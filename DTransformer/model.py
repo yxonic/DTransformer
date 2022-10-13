@@ -227,10 +227,10 @@ class DTransformer(nn.Module):
         # CL loss
         input = (
             F.cosine_similarity(
-                z_1[:, None, :minlen, :],
-                z_2[None, :, :minlen, :],
+                z_1[:, None, :minlen, :].view(bs, 1, minlen, self.n_know, -1),
+                z_2[None, :, :minlen, :].view(1, bs, minlen, self.n_know, -1),
                 dim=-1,
-            )
+            ).mean(-1)
             / 0.05
         )
         target = (
