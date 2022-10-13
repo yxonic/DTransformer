@@ -22,6 +22,7 @@ class DTransformer(nn.Module):
         dropout=0.05,
         lambda_cl=0.1,
         proj=False,
+        hard_neg=True,
         shortcut=False,
     ):
         super().__init__()
@@ -62,6 +63,7 @@ class DTransformer(nn.Module):
 
         self.dropout_rate = dropout
         self.lambda_cl = lambda_cl
+        self.hard_neg = hard_neg
         self.shortcut = shortcut
         self.n_layers = n_layers
 
@@ -211,31 +213,37 @@ class DTransformer(nn.Module):
                     pid_[b, i], pid_[b, i + 1] = pid_[b, i + 1], pid_[b, i]
 
         # hard negative
-        s_hard_neg = s.clone()
+        s_flip = s.clone() if self.hard_neg else s_
         for b in range(bs):
             # manipulate score
             idx = random.sample(
                 range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
             )
             for i in idx:
-                s_hard_neg[b, i] = 1 - s_hard_neg[b, i]
+                s_flip[b, i] = 1 - s_flip[b, i]
+        if not self.hard_neg:
+            s_ = s_flip
 
         # model
         logits, z_1, reg_loss, _ = self.predict(q, s, pid)
         masked_logits = logits[s >= 0]
 
         _, z_2, _, _ = self.predict(q_, s_, pid_)
-        _, z_3, _, _ = self.predict(q, s_hard_neg, pid)
+
+        if self.hard_neg:
+            _, z_3, _, _ = self.predict(q, s_flip, pid)
 
         # CL loss
         input = self.sim(z_1[:, :minlen, :], z_2[:, :minlen, :])
-        hard_neg = self.sim(z_1[:, :minlen, :], z_3[:, :minlen, :])
+        if self.hard_neg:
+            hard_neg = self.sim(z_1[:, :minlen, :], z_3[:, :minlen, :])
+            input = torch.cat([input, hard_neg], dim=1)
         target = (
             torch.arange(s.size(0))[:, None]
             .to(self.know_params.device)
             .expand(-1, minlen)
         )
-        cl_loss = F.cross_entropy(torch.cat([input, hard_neg], dim=1), target)
+        cl_loss = F.cross_entropy(input, target)
 
         # prediction loss
         masked_labels = s[s >= 0].float()
