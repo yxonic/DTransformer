@@ -43,6 +43,7 @@ parser.add_argument(
     "--n_know", help="dimension of knowledge parameter", type=int, default=32
 )
 parser.add_argument("--dropout", help="dropout rate", type=float, default=0.2)
+parser.add_argument("--proj", help="projection layer before CL", action="store_true")
 
 # training setup
 parser.add_argument("-n", "--n_epochs", help="training epochs", type=int, default=100)
@@ -60,7 +61,9 @@ parser.add_argument("-l2", help="L2 regularization", type=float, default=1e-5)
 parser.add_argument(
     "-cl", "--cl_loss", help="use contrastive learning loss", action="store_true"
 )
-parser.add_argument("--lambda", help="CL loss weight", type=float, default=0.1)
+parser.add_argument(
+    "--lambda", help="CL loss weight", type=float, default=0.1, dest="lambda_cl"
+)
 
 # snapshot setup
 parser.add_argument("-o", "--output_dir", help="directory to save model files and logs")
@@ -131,8 +134,9 @@ def main(args):
             n_layers=args.n_layers,
             n_heads=args.n_heads,
             n_know=args.n_know,
-            lambda_cl=args.lambda,
+            lambda_cl=args.lambda_cl,
             dropout=args.dropout,
+            proj=args.proj,
         )
 
     if args.from_file:

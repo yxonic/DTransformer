@@ -21,6 +21,7 @@ class DTransformer(nn.Module):
         n_layers=1,
         dropout=0.05,
         lambda_cl=0.1,
+        proj=False,
         shortcut=False,
     ):
         super().__init__()
@@ -53,6 +54,11 @@ class DTransformer(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(d_fc // 2, 1),
         )
+
+        if proj:
+            self.proj = nn.Sequential(nn.Linear(d_model, d_model), nn.GELU())
+        else:
+            self.proj = None
 
         self.dropout_rate = dropout
         self.lambda_cl = lambda_cl
@@ -160,7 +166,7 @@ class DTransformer(nn.Module):
         y = self.out(torch.cat([query, h], dim=-1)).squeeze(-1)
 
         if pid is not None:
-            return y, z, (p_diff**2).sum() * 1e-5, (q_scores, k_scores)
+            return y, z, (p_diff**2).mean() * 1e-3, (q_scores, k_scores)
         else:
             return y, z, 0.0, (q_scores, k_scores)
 
@@ -222,22 +228,8 @@ class DTransformer(nn.Module):
         _, z_3, _, _ = self.predict(q, s_hard_neg, pid)
 
         # CL loss
-        input = (
-            F.cosine_similarity(
-                z_1[:, None, :minlen, :].view(bs, 1, minlen, self.n_know, -1).mean(-2),
-                z_2[None, :, :minlen, :].view(1, bs, minlen, self.n_know, -1).mean(-2),
-                dim=-1,
-            )
-            / 0.05
-        )
-        hard_neg = (
-            F.cosine_similarity(
-                z_1[:, None, :minlen, :].view(bs, 1, minlen, self.n_know, -1).mean(-2),
-                z_3[None, :, :minlen, :].view(1, bs, minlen, self.n_know, -1).mean(-2),
-                dim=-1,
-            )
-            / 0.05
-        )
+        input = self.sim(z_1[:, :minlen, :], z_2[:, :minlen, :])
+        hard_neg = self.sim(z_1[:, :minlen, :], z_3[:, :minlen, :])
         target = (
             torch.arange(s.size(0))[:, None]
             .to(self.know_params.device)
@@ -253,6 +245,19 @@ class DTransformer(nn.Module):
 
         # TODO: weights
         return pred_loss + cl_loss * self.lambda_cl + reg_loss, pred_loss, cl_loss
+
+    def sim(self, z1, z2):
+        bs, seqlen, _ = z1.size()
+        z1 = z1.unsqueeze(1).view(bs, 1, seqlen, self.n_know, -1)
+        z2 = z2.unsqueeze(0).view(1, bs, seqlen, self.n_know, -1)
+        return (
+            F.cosine_similarity(
+                self.proj(z1).mean(-2),
+                self.proj(z2).mean(-2),
+                dim=-1,
+            )
+            / 0.05
+        )
 
 
 class DTransformerLayer(nn.Module):
