@@ -60,6 +60,7 @@ parser.add_argument("-l2", help="L2 regularization", type=float, default=1e-5)
 parser.add_argument(
     "-cl", "--cl_loss", help="use contrastive learning loss", action="store_true"
 )
+parser.add_argument("--lambda", help="CL loss weight", type=float, default=0.1)
 
 # snapshot setup
 parser.add_argument("-o", "--output_dir", help="directory to save model files and logs")
@@ -130,6 +131,7 @@ def main(args):
             n_layers=args.n_layers,
             n_heads=args.n_heads,
             n_know=args.n_know,
+            lambda_cl=args.lambda,
             dropout=args.dropout,
         )
 

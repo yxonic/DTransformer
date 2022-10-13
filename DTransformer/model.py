@@ -177,24 +177,24 @@ class DTransformer(nn.Module):
 
     def get_cl_loss(self, q, s, pid=None):
         bs = s.size(0)
+
+        # skip CL for batches that are too short
         lens = (s >= 0).sum(dim=1)
         minlen = lens.min().item()
         if minlen < MIN_SEQ_LEN:
-            # skip CL for batches that are too short
             return self.get_loss(q, s, pid)
-
-        masked_labels = s[s >= 0].float()
 
         # augmentation
         q_ = q.clone()
         s_ = s.clone()
+
         if pid is not None:
             pid_ = pid.clone()
         else:
             pid_ = None
 
+        # manipulate order
         for b in range(bs):
-            # manipulate order
             idx = random.sample(
                 range(lens[b] - 1), max(1, int(lens[b] * self.dropout_rate))
             )
@@ -204,34 +204,38 @@ class DTransformer(nn.Module):
                 if pid_ is not None:
                     pid_[b, i], pid_[b, i + 1] = pid_[b, i + 1], pid_[b, i]
 
-        masked_labels_ = s_[s >= 0].float()
-
+        # hard negative
+        s_hard_neg = s.clone()
         for b in range(bs):
             # manipulate score
             idx = random.sample(
                 range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
             )
             for i in idx:
-                if s_[b, i].item() == 1:
-                    s_[b, i] = 0
+                s_hard_neg[b, i] = 1 - s_hard_neg[b, i]
 
         # model
-        logits_1, z_1, reg_loss_1, _ = self.predict(q, s, pid)
-        masked_logits_1 = logits_1[s >= 0]
+        logits, z_1, reg_loss, _ = self.predict(q, s, pid)
+        masked_logits = logits[s >= 0]
 
-        logits_2, z_2, reg_loss_2, _ = self.predict(q_, s_, pid_)
-        masked_logits_2 = logits_2[s >= 0]
-
-        reg_loss = reg_loss_1
-        # reg_loss = (reg_loss_1 + reg_loss_2) / 2
+        _, z_2, _, _ = self.predict(q_, s_, pid_)
+        _, z_3, _, _ = self.predict(q, s_hard_neg, pid)
 
         # CL loss
         input = (
             F.cosine_similarity(
-                z_1[:, None, :minlen, :].view(bs, 1, minlen, self.n_know, -1),
-                z_2[None, :, :minlen, :].view(1, bs, minlen, self.n_know, -1),
+                z_1[:, None, :minlen, :].view(bs, 1, minlen, self.n_know, -1).mean(-2),
+                z_2[None, :, :minlen, :].view(1, bs, minlen, self.n_know, -1).mean(-2),
                 dim=-1,
-            ).mean(-1)
+            )
+            / 0.05
+        )
+        hard_neg = (
+            F.cosine_similarity(
+                z_1[:, None, :minlen, :].view(bs, 1, minlen, self.n_know, -1).mean(-2),
+                z_3[None, :, :minlen, :].view(1, bs, minlen, self.n_know, -1).mean(-2),
+                dim=-1,
+            )
             / 0.05
         )
         target = (
@@ -239,16 +243,13 @@ class DTransformer(nn.Module):
             .to(self.know_params.device)
             .expand(-1, minlen)
         )
-        cl_loss = F.cross_entropy(input, target)
+        cl_loss = F.cross_entropy(torch.cat([input, hard_neg], dim=1), target)
 
         # prediction loss
+        masked_labels = s[s >= 0].float()
         pred_loss = F.binary_cross_entropy_with_logits(
-            masked_logits_1, masked_labels, reduction="mean"
+            masked_logits, masked_labels, reduction="mean"
         )
-        # pred_loss_2 = F.binary_cross_entropy_with_logits(
-        #     masked_logits_2, masked_labels_, reduction="mean"
-        # )
-        # pred_loss = (pred_loss_1 + pred_loss_2) / 2
 
         # TODO: weights
         return pred_loss + cl_loss * self.lambda_cl + reg_loss, pred_loss, cl_loss
