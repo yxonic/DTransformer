@@ -34,7 +34,6 @@ class DKT(nn.Module):
             .to(self.device())
         )
         h = self(x)
-        print(h.size(), q.size())
         y = (
             h[:, : h.size(1) - n + 1, :]
             .gather(-1, q[:, n - 1 :].unsqueeze(-1))
