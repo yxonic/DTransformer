@@ -34,12 +34,6 @@ class AKT(nn.Module):
         self.block1 = DTransformerLayer(d_model, n_heads, dropout)
         self.block2 = DTransformerLayer(d_model, n_heads, dropout)
         self.block3 = DTransformerLayer(d_model, n_heads, dropout)
-        self.block4 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
-
-        self.linear_k = nn.Linear(d_model // n_heads, d_model)
-        self.linear_v = nn.Linear(d_model // n_heads, d_model)
-        self.know_params = nn.Parameter(torch.empty(1, 1, d_model))
-        torch.nn.init.uniform_(self.know_params, -1.0, 1.0)
 
         self.out = nn.Sequential(
             nn.Linear(d_model * 2, d_fc),
@@ -98,73 +92,6 @@ class AKT(nn.Module):
             + reg_loss
         )
 
-    def get_cl_loss(self, q, s, pid=None):
-        bs = s.size(0)
-        lens = (s >= 0).sum(dim=1)
-        minlen = lens.min().item()
-        if minlen < MIN_SEQ_LEN:
-            # skip CL for batches that are too short
-            return self.get_loss(q, s, pid)
-
-        masked_labels = s[s >= 0].float()
-
-        # augmentation
-        q_ = q.clone()
-        s_ = s.clone()
-        if pid is not None:
-            pid_ = pid.clone()
-        else:
-            pid_ = None
-
-        for b in range(bs):
-            # manipulate order
-            idx = random.sample(
-                range(lens[b] - 1), max(1, int(lens[b] * self.dropout_rate))
-            )
-            for i in idx:
-                q_[b, i], q_[b, i + 1] = q_[b, i + 1], q_[b, i]
-                s_[b, i], s_[b, i + 1] = s_[b, i + 1], s_[b, i]
-                if pid_ is not None:
-                    pid_[b, i], pid_[b, i + 1] = pid_[b, i + 1], pid_[b, i]
-
-        masked_labels_ = s_[s >= 0].float()
-
-        for b in range(bs):
-            # manipulate score
-            idx = random.sample(
-                range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
-            )
-            for i in idx:
-                s_[b, i] = 1 - s_[b, i]
-
-        # model
-        logits_1, h_1, reg_loss_1 = self.predict(q, s, pid)
-        masked_logits_1 = logits_1[s >= 0]
-
-        logits_2, h_2, reg_loss_2 = self.predict(q_, s_, pid_)
-        masked_logits_2 = logits_2[s >= 0]
-
-        reg_loss = (reg_loss_1 + reg_loss_2) / 2
-
-        # CL loss
-        input = F.cosine_similarity(
-            h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
-        )
-        target = torch.arange(s.size(0))[:, None].expand(-1, minlen)
-        cl_loss = F.cross_entropy(input, target)
-
-        # prediction loss
-        pred_loss_1 = F.binary_cross_entropy_with_logits(
-            masked_logits_1, masked_labels, reduction="mean"
-        )
-        pred_loss_2 = F.binary_cross_entropy_with_logits(
-            masked_logits_2, masked_labels_, reduction="mean"
-        )
-        pred_loss = (pred_loss_1 + pred_loss_2) / 2
-
-        # TODO: weights
-        return cl_loss * 0.1 + pred_loss + reg_loss
-
 
 class DTransformerLayer(nn.Module):
     def __init__(self, d_model, n_heads, dropout, kq_same=True):
@@ -175,12 +102,15 @@ class DTransformerLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model)
 
+    def device(self):
+        return next(self.parameters()).device
+
     def forward(self, query, key, values, lens, peek_cur=False, n=1):
         # construct mask
         seqlen = query.size(1)
         mask = torch.ones(seqlen, seqlen).tril(0 if peek_cur else -1)
-        skip_mask = ~torch.ones(seqlen - n + 1).diag(-n+1).bool()
-        mask = (mask.bool() & skip_mask)[None, None, :, :]
+        skip_mask = ~torch.ones(seqlen - n + 1).diag(-n + 1).bool()
+        mask = (mask.bool() & skip_mask)[None, None, :, :].to(self.device())
 
         # mask manipulation
         if self.training:
