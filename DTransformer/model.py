@@ -295,7 +295,9 @@ class DTransformerLayer(nn.Module):
                     mask[b, :, i + 1 :, i] = 0
 
         # apply transformer layer
-        query_, scores = self.masked_attn_head(query, key, values, mask)
+        query_, scores = self.masked_attn_head(
+            query, key, values, mask, maxout=not peek_cur
+        )
         query = query + self.dropout(query_)
         return self.layer_norm(query), scores
 
@@ -318,7 +320,7 @@ class MultiHeadAttention(nn.Module):
         self.gammas = nn.Parameter(torch.zeros(n_heads, 1, 1))
         torch.nn.init.xavier_uniform_(self.gammas)
 
-    def forward(self, q, k, v, mask):
+    def forward(self, q, k, v, mask, maxout=False):
         bs = q.size(0)
 
         # perform linear operation and split into h heads
@@ -338,6 +340,7 @@ class MultiHeadAttention(nn.Module):
             v,
             mask,
             self.gammas,
+            maxout,
         )
 
         # concatenate heads and put through final linear layer
@@ -348,7 +351,7 @@ class MultiHeadAttention(nn.Module):
         return output, scores
 
 
-def attention(q, k, v, mask, gamma=None):
+def attention(q, k, v, mask, gamma=None, maxout=False):
     # attention score with scaled dot production
     d_k = k.size(-1)
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
@@ -363,6 +366,7 @@ def attention(q, k, v, mask, gamma=None):
             ones = torch.ones(head // 2, 1, 1).to(gamma.device)
             sign = torch.concat([ones, -ones])
             scores_ = (scores * sign).masked_fill(mask == 0, -1e32)
+            scores = scores.masked_fill(mask == 0, -1e32)
             scores_ = F.softmax(scores_, dim=-1)
 
             distcum_scores = torch.cumsum(scores_, dim=-1)
@@ -384,8 +388,9 @@ def attention(q, k, v, mask, gamma=None):
     scores = scores.masked_fill(mask == 0, 0)  # set to hard zero to avoid leakage
 
     # max-out scores (bs, n_heads, seqlen, seqlen)
-    scale = torch.clamp(1.0 / scores.max(dim=-1, keepdim=True)[0], max=10.0)
-    scores *= scale
+    if maxout:
+        scale = torch.clamp(1.0 / scores.max(dim=-1, keepdim=True)[0], max=5.0)
+        scores *= scale
 
     # calculate output
     output = torch.matmul(scores, v)
