@@ -23,6 +23,7 @@ class DTransformer(nn.Module):
         lambda_cl=0.1,
         proj=False,
         hard_neg=True,
+        window=1,
         shortcut=False,
     ):
         super().__init__()
@@ -66,6 +67,7 @@ class DTransformer(nn.Module):
         self.hard_neg = hard_neg
         self.shortcut = shortcut
         self.n_layers = n_layers
+        self.window = window
 
     def forward(self, q_emb, s_emb, lens):
         if self.shortcut:
@@ -144,11 +146,11 @@ class DTransformer(nn.Module):
             .expand(bs, seqlen, -1, -1)
             .view(bs * seqlen, self.n_know, -1)
         )
-        value = z[:, :seqlen, :].view(bs * seqlen, self.n_know, -1)
+        value = z.reshape(bs * seqlen, self.n_know, -1)
 
         beta = torch.matmul(
             key,
-            query.view(bs * seqlen, -1, 1),
+            query.reshape(bs * seqlen, -1, 1),
         ).view(bs * seqlen, 1, self.n_know)
         alpha = torch.softmax(beta, -1)
         return torch.matmul(alpha, value).view(bs, seqlen, -1)
@@ -168,12 +170,12 @@ class DTransformer(nn.Module):
         y = self.out(torch.cat([query, h], dim=-1)).squeeze(-1)
 
         if pid is not None:
-            return y, z, (p_diff**2).mean() * 1e-3, (q_scores, k_scores)
+            return y, z, q_emb, (p_diff**2).mean() * 1e-3, (q_scores, k_scores)
         else:
-            return y, z, 0.0, (q_scores, k_scores)
+            return y, z, q_emb, 0.0, (q_scores, k_scores)
 
     def get_loss(self, q, s, pid=None):
-        logits, _, reg_loss, _ = self.predict(q, s, pid)
+        logits, _, _, reg_loss, _ = self.predict(q, s, pid)
         masked_labels = s[s >= 0].float()
         masked_logits = logits[s >= 0]
         return (
@@ -225,13 +227,13 @@ class DTransformer(nn.Module):
             s_ = s_flip
 
         # model
-        logits, z_1, reg_loss, _ = self.predict(q, s, pid)
+        logits, z_1, q_emb, reg_loss, _ = self.predict(q, s, pid)
         masked_logits = logits[s >= 0]
 
-        _, z_2, _, _ = self.predict(q_, s_, pid_)
+        _, z_2, *_ = self.predict(q_, s_, pid_)
 
         if self.hard_neg:
-            _, z_3, _, _ = self.predict(q, s_flip, pid)
+            _, z_3, *_ = self.predict(q, s_flip, pid)
 
         # CL loss
         input = self.sim(z_1[:, :minlen, :], z_2[:, :minlen, :])
@@ -250,6 +252,17 @@ class DTransformer(nn.Module):
         pred_loss = F.binary_cross_entropy_with_logits(
             masked_logits, masked_labels, reduction="mean"
         )
+
+        for i in range(1, self.window):
+            label = s[:, i:]
+            query = q_emb[:, i:, :]
+            h = self.readout(z_1[:, : query.size(1), :], query)
+            y = self.out(torch.cat([query, h], dim=-1)).squeeze(-1)
+
+            pred_loss += F.binary_cross_entropy_with_logits(
+                y[label >= 0], label[label >= 0].float()
+            )
+        pred_loss /= self.window
 
         # TODO: weights
         return pred_loss + cl_loss * self.lambda_cl + reg_loss, pred_loss, cl_loss
