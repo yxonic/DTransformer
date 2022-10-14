@@ -67,6 +67,7 @@ parser.add_argument(
 parser.add_argument(
     "--lambda", help="CL loss weight", type=float, default=0.1, dest="lambda_cl"
 )
+parser.add_argument("--window", help="prediction window", type=int, default=1)
 
 # snapshot setup
 parser.add_argument("-o", "--output_dir", help="directory to save model files and logs")
@@ -116,15 +117,13 @@ def main(args):
 
         model = DKVMN(dataset["n_questions"], args.batch_size)
     elif args.model == "AKT":
-        from DTransformer.model import DTransformer
+        from baselines.AKT import AKT
 
-        model = DTransformer(
+        model = AKT(
             dataset["n_questions"],
             dataset["n_pid"],
             d_model=args.d_model,
             n_heads=args.n_heads,
-            n_know=args.n_know,
-            shortcut=True,
             dropout=args.dropout,
         )
     else:
@@ -141,6 +140,7 @@ def main(args):
             dropout=args.dropout,
             proj=args.proj,
             hard_neg=args.hard_neg,
+            window=args.window,
         )
 
     if args.from_file:

@@ -9,19 +9,16 @@ import torch.nn.functional as F
 MIN_SEQ_LEN = 5
 
 
-class DTransformer(nn.Module):
+class AKT(nn.Module):
     def __init__(
         self,
         n_questions,
         n_pid=0,
-        d_model=128,
-        d_fc=256,
+        d_model=256,
+        d_fc=512,
         n_heads=8,
-        n_know=16,
-        n_layers=1,
         dropout=0.05,
-        lambda_cl=0.1,
-        shortcut=True,
+        shortcut=False,
     ):
         super().__init__()
         self.n_questions = n_questions
@@ -38,10 +35,10 @@ class DTransformer(nn.Module):
         self.block2 = DTransformerLayer(d_model, n_heads, dropout)
         self.block3 = DTransformerLayer(d_model, n_heads, dropout)
         self.block4 = DTransformerLayer(d_model, n_heads, dropout, kq_same=False)
-        self.block5 = DTransformerLayer(d_model, n_heads, dropout)
 
-        self.n_know = n_know
-        self.know_params = nn.Parameter(torch.empty(n_know, d_model))
+        self.linear_k = nn.Linear(d_model // n_heads, d_model)
+        self.linear_v = nn.Linear(d_model // n_heads, d_model)
+        self.know_params = nn.Parameter(torch.empty(1, 1, d_model))
         torch.nn.init.uniform_(self.know_params, -1.0, 1.0)
 
         self.out = nn.Sequential(
@@ -55,60 +52,12 @@ class DTransformer(nn.Module):
         )
 
         self.dropout_rate = dropout
-        self.lambda_cl = lambda_cl
-        self.shortcut = shortcut
-        self.n_layers = n_layers
 
-    def forward(self, q_emb, s_emb, lens):
-        if self.shortcut:
-            # AKT
-            hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
-            hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            return self.block3(hq, hq, hs, lens, peek_cur=False)
-
-        if self.n_layers == 1:
-            hq = q_emb
-            p = self.block1(q_emb, q_emb, s_emb, lens, peek_cur=True)
-        elif self.n_layers == 2:
-            hq = q_emb
-            hs = self.block1(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            p = self.block2(hq, hq, hs, lens, peek_cur=True)
-        else:
-            hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True)
-            hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True)
-            p = self.block3(hq, hq, hs, lens, peek_cur=True)
-
-        bs, seqlen, d_model = p.size()
-        n_know = self.n_know
-
-        query = (
-            self.know_params[None, :, None, :]
-            .expand(bs, -1, seqlen, -1)
-            .reshape(bs * n_know, seqlen, d_model)
-        )
-        hq = hq.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
-        p = p.unsqueeze(1).expand(-1, n_know, -1, -1).reshape_as(query)
-
-        z = self.block4(
-            query, hq, p, torch.repeat_interleave(lens, n_know), peek_cur=False
-        )
-        z = z.transpose(1, 2)  # (bs, seqlen, n_know, d_model)
-
-        key = (
-            self.know_params[None, None, :, :]
-            .expand(bs, seqlen, -1, -1)
-            .view(bs * seqlen, self.n_know, -1)
-        )
-        value = z.reshape(bs * seqlen, self.n_know, -1)
-
-        beta = torch.matmul(
-            key,
-            q_emb.view(bs * seqlen, -1, 1),
-        ).view(bs * seqlen, 1, self.n_know)
-        alpha = torch.softmax(beta, -1)
-        h = torch.matmul(alpha, value).view(bs, seqlen, -1)
-
-        return h
+    def forward(self, q_emb, s_emb, lens, n=1):
+        # AKT
+        hq = self.block1(q_emb, q_emb, q_emb, lens, peek_cur=True, n=n)
+        hs = self.block2(s_emb, s_emb, s_emb, lens, peek_cur=True, n=n)
+        return self.block3(hq, hq, hs, lens, peek_cur=False, n=n)
 
     def predict(self, q, s, pid=None, n=1):
         lens = (s >= 0).sum(dim=1)
@@ -130,10 +79,8 @@ class DTransformer(nn.Module):
             s_diff_emb = self.s_diff_embed(s) + q_diff_emb
             s_emb += s_diff_emb * p_diff
 
-        h = self(q_emb, s_emb, lens)
-        y = self.out(
-            torch.cat([q_emb[:, n - 1 :, :], h[:, : h.size(1) - n + 1, :]], dim=-1)
-        ).squeeze(-1)
+        h = self(q_emb, s_emb, lens, n)
+        y = self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
 
         if pid is not None:
             return y, h, (p_diff**2).sum() * 1e-5
@@ -188,8 +135,7 @@ class DTransformer(nn.Module):
                 range(lens[b]), max(1, int(lens[b] * self.dropout_rate))
             )
             for i in idx:
-                if s_[b, i].item() == 1:
-                    s_[b, i] = 0
+                s_[b, i] = 1 - s_[b, i]
 
         # model
         logits_1, h_1, reg_loss_1 = self.predict(q, s, pid)
@@ -204,11 +150,7 @@ class DTransformer(nn.Module):
         input = F.cosine_similarity(
             h_1[:, None, :minlen, :], h_2[None, :, :minlen, :], dim=-1
         )
-        target = (
-            torch.arange(s.size(0))[:, None]
-            .expand(-1, minlen)
-            .to(self.know_params.device)
-        )
+        target = torch.arange(s.size(0))[:, None].expand(-1, minlen)
         cl_loss = F.cross_entropy(input, target)
 
         # prediction loss
@@ -221,7 +163,7 @@ class DTransformer(nn.Module):
         pred_loss = (pred_loss_1 + pred_loss_2) / 2
 
         # TODO: weights
-        return cl_loss * self.lambda_cl + pred_loss + reg_loss, cl_loss
+        return cl_loss * 0.1 + pred_loss + reg_loss
 
 
 class DTransformerLayer(nn.Module):
@@ -233,11 +175,12 @@ class DTransformerLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model)
 
-    def forward(self, query, key, values, lens, peek_cur=False):
+    def forward(self, query, key, values, lens, peek_cur=False, n=1):
         # construct mask
         seqlen = query.size(1)
         mask = torch.ones(seqlen, seqlen).tril(0 if peek_cur else -1)
-        mask = mask.bool()[None, None, :, :].to(self.masked_attn_head.gammas.device)
+        skip_mask = ~torch.ones(seqlen - n + 1).diag(-n+1).bool()
+        mask = (mask.bool() & skip_mask)[None, None, :, :]
 
         # mask manipulation
         if self.training:
