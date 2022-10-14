@@ -66,15 +66,13 @@ def main(args):
 
         model = DKVMN(dataset["n_questions"], args.batch_size)
     elif args.model == "AKT":
-        from DTransformer.model import DTransformer
+        from baselines.AKT import AKT
 
-        model = DTransformer(
+        model = AKT(
             dataset["n_questions"],
             dataset["n_pid"],
             d_model=args.d_model,
             n_heads=args.n_heads,
-            n_know=args.n_know,
-            shortcut=True,
         )
     else:
         from DTransformer.model import DTransformer
