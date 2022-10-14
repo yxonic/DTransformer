@@ -376,10 +376,10 @@ def attention(q, k, v, mask, gamma=None, maxout=False):
         x2 = x1.transpose(0, 1).contiguous()
 
         with torch.no_grad():
-            ones = torch.ones(head // 2, 1, 1).to(gamma.device)
-            sign = torch.concat([ones, -ones])
-            scores_ = (scores * sign).masked_fill(mask == 0, -1e32)
-            scores = scores.masked_fill(mask == 0, -1e32)
+            # ones = torch.ones(head // 2, 1, 1).to(gamma.device)
+            # sign = torch.concat([ones, -ones])
+            # scores_ = (scores * sign).masked_fill(mask == 0, -1e32)
+            scores_ = scores.masked_fill(mask == 0, -1e32)
             scores_ = F.softmax(scores_, dim=-1)
 
             distcum_scores = torch.cumsum(scores_, dim=-1)
