@@ -165,7 +165,7 @@ class DTransformer(nn.Module):
             h = z
         else:
             query = q_emb[:, n - 1 :, :]
-            h = self.readout(z, query)
+            h = self.readout(z[:, :query.size(1), :], query)
 
         y = self.out(torch.cat([query, h], dim=-1)).squeeze(-1)
 
