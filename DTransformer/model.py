@@ -276,6 +276,31 @@ class DTransformer(nn.Module):
             z2 = self.proj(z2)
         return F.cosine_similarity(z1.mean(-2), z2.mean(-2), dim=-1) / 0.05
 
+    def tracing(self, q, s, pid=None):
+        device = self.know_params.device
+        # add fake q, s, pid to generate the last tracing result
+        q = torch.cat((q, torch.tensor([0]).to(device)), dim=0)
+        q = q.unsqueeze(0)
+        s = torch.cat((s, torch.tensor([0]).to(device)), dim=0)
+        s = s.unsqueeze(0)
+        if pid is not None:
+            pid = torch.cat((pid, torch.tensor([0]).to(device)), dim=0)
+            pid = pid.unsqueeze(0)
+            
+        with torch.no_grad():
+            # q_emb: (bs, seq_len, d_model)
+            # z: (bs, seq_len, n_know * d_model)
+            # know_params: (n_know, d_model)->(n_know, 1, d_model)
+            q_emb, s_emb, lens, _ = self.embedding(q, s, pid)
+            z, _, _ = self(q_emb, s_emb, lens)
+            query = self.know_params.unsqueeze(1).expand(-1, z.size(1), -1).contiguous()
+            z = z.expand(self.n_know, -1, -1).contiguous()
+            h = self.readout(z, query)
+            y = self.out(torch.cat([query, h], dim=-1)).squeeze(-1)
+            y = torch.sigmoid(y)
+
+        return y
+
 
 class DTransformerLayer(nn.Module):
     def __init__(self, d_model, n_heads, dropout, kq_same=True):
