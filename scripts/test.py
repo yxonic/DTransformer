@@ -111,17 +111,17 @@ def main(args):
                 if pid is not None:
                     pid = pid.to(args.device)
                 y, *_ = model.predict(q, s, pid, args.N)
-                evaluator.evaluate(s[:, (args.N-1):], torch.sigmoid(y))
+                evaluator.evaluate(s[:, (args.N - 1) :], torch.sigmoid(y))
             # it.set_postfix(evaluator.report())
 
     output_path = args.from_file + ".json"
     if os.path.exists(output_path):
         output = json.load(open(output_path))
     else:
-        output = {'args': vars(args), 'metrics': {}}
+        output = {"args": vars(args), "metrics": {}}
 
-    output['metrics'][args.N] = evaluator.report()
-    print(output['metrics'][args.N])
+    output["metrics"][args.N] = evaluator.report()
+    print(output["metrics"][args.N])
 
     json.dump(output, open(output_path, "w"), indent=2)
 

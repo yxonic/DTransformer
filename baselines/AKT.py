@@ -72,8 +72,13 @@ class AKT(nn.Module):
             s_emb += s_diff_emb * p_diff
 
         seqlen = q.size(1) - n + 1
-        h = self(q_emb[:, :seqlen, :], s_emb[:, :seqlen, :], (s[:, :seqlen] >= 0).sum(dim=1), n)
-        y = self.out(torch.cat([q_emb[:,n-1:,:], h], dim=-1)).squeeze(-1)
+        h = self(
+            q_emb[:, :seqlen, :],
+            s_emb[:, :seqlen, :],
+            (s[:, :seqlen] >= 0).sum(dim=1),
+            n,
+        )
+        y = self.out(torch.cat([q_emb[:, n - 1 :, :], h], dim=-1)).squeeze(-1)
 
         if pid is not None:
             return y, h, (p_diff**2).sum() * 1e-5

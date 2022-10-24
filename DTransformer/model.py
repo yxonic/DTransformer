@@ -165,7 +165,7 @@ class DTransformer(nn.Module):
             h = z
         else:
             query = q_emb[:, n - 1 :, :]
-            h = self.readout(z[:, :query.size(1), :], query)
+            h = self.readout(z[:, : query.size(1), :], query)
 
         y = self.out(torch.cat([query, h], dim=-1)).squeeze(-1)
 
@@ -277,16 +277,13 @@ class DTransformer(nn.Module):
         return F.cosine_similarity(z1.mean(-2), z2.mean(-2), dim=-1) / 0.05
 
     def tracing(self, q, s, pid=None):
-        device = self.know_params.device
         # add fake q, s, pid to generate the last tracing result
-        q = torch.cat((q, torch.tensor([0]).to(device)), dim=0)
-        q = q.unsqueeze(0)
-        s = torch.cat((s, torch.tensor([0]).to(device)), dim=0)
-        s = s.unsqueeze(0)
+        pad = torch.tensor([0]).to(self.know_params.device)
+        q = torch.cat([q, pad], dim=0).unsqueeze(0)
+        s = torch.cat([s, pad], dim=0).unsqueeze(0)
         if pid is not None:
-            pid = torch.cat((pid, torch.tensor([0]).to(device)), dim=0)
-            pid = pid.unsqueeze(0)
-            
+            pid = torch.cat([pid, pad], dim=0).unsqueeze(0)
+
         with torch.no_grad():
             # q_emb: (bs, seq_len, d_model)
             # z: (bs, seq_len, n_know * d_model)
@@ -311,11 +308,14 @@ class DTransformerLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model)
 
+    def device(self):
+        return next(self.parameters()).device
+
     def forward(self, query, key, values, lens, peek_cur=False):
         # construct mask
         seqlen = query.size(1)
         mask = torch.ones(seqlen, seqlen).tril(0 if peek_cur else -1)
-        mask = mask.bool()[None, None, :, :].to(self.masked_attn_head.gammas.device)
+        mask = mask.bool()[None, None, :, :].to(self.device())
 
         # mask manipulation
         if self.training:
