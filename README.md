@@ -4,16 +4,21 @@
 
 ### Train
 
-DTransformer, ASSIST09:
+Train DTransformer with CL loss:
 
 ```bash
-python scripts/train.py -m DTransformer -d ASSISTchall_slice -bs 32 -p -cl [-o output/DTransformer_ASSISTchall_slice] [--device cuda]
+python scripts/train.py -m DTransformer -d [assist09,assist17,algebra05,statics] -bs 32 -tbs 32 -p -cl --proj [-o output/DTransformer_assist09] [--device cuda]
 ```
 
-DTransformer, ASSISTchall:
-
+For more options, run:
 ```bash
-python scripts/train.py -m DTransformer -d ASSISTchall_slice -bs 32 -p -cl -o [output/DTransformer_ASSISTchall_slice] [--device cuda]
+python scripts/train.py -h
 ```
 
 ### Evaluate
+
+Evaluate DTransformer:
+
+```bash
+python scripts/test.py -m DTransformer -d [assist09,assist17,algebra05,statics] -bs 32 -p -f [output/best_model.pt] [--device cuda]
+```
