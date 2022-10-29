@@ -54,8 +54,6 @@ class AKT(nn.Module):
         return self.block3(hq, hq, hs, lens, peek_cur=False, n=n)
 
     def predict(self, q, s, pid=None, n=1):
-        lens = (s >= 0).sum(dim=1)
-
         # set prediction mask
         q = q.masked_fill(q < 0, 0)
         s = s.masked_fill(s < 0, 0)
@@ -73,8 +71,14 @@ class AKT(nn.Module):
             s_diff_emb = self.s_diff_embed(s) + q_diff_emb
             s_emb += s_diff_emb * p_diff
 
-        h = self(q_emb, s_emb, lens, n)
-        y = self.out(torch.cat([q_emb, h], dim=-1)).squeeze(-1)
+        seqlen = q.size(1) - n + 1
+        h = self(
+            q_emb[:, :seqlen, :],
+            s_emb[:, :seqlen, :],
+            (s[:, :seqlen] >= 0).sum(dim=1),
+            n,
+        )
+        y = self.out(torch.cat([q_emb[:, n - 1 :, :], h], dim=-1)).squeeze(-1)
 
         if pid is not None:
             return y, h, (p_diff**2).sum() * 1e-5

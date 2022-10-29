@@ -1,4 +1,5 @@
 import os
+import json
 from argparse import ArgumentParser
 
 import torch
@@ -42,6 +43,7 @@ parser.add_argument(
 
 # test setup
 parser.add_argument("-f", "--from_file", help="test existing model file", required=True)
+parser.add_argument("-N", help="T+N prediction window size", type=int, default=1)
 
 
 # testing logic
@@ -108,11 +110,20 @@ def main(args):
                 s = s.to(args.device)
                 if pid is not None:
                     pid = pid.to(args.device)
-                y, *_ = model.predict(q, s, pid)
-                evaluator.evaluate(s, torch.sigmoid(y))
+                y, *_ = model.predict(q, s, pid, args.N)
+                evaluator.evaluate(s[:, (args.N - 1) :], torch.sigmoid(y))
             # it.set_postfix(evaluator.report())
 
-    print(evaluator.report())
+    output_path = args.from_file + ".json"
+    if os.path.exists(output_path):
+        output = json.load(open(output_path))
+    else:
+        output = {"args": vars(args), "metrics": {}}
+
+    output["metrics"][args.N] = evaluator.report()
+    print(output["metrics"][args.N])
+
+    json.dump(output, open(output_path, "w"), indent=2)
 
 
 if __name__ == "__main__":
