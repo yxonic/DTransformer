@@ -1,5 +1,11 @@
 # DTransformer
 
+## Installation
+
+```bash
+poetry install
+```
+
 ## Usage
 
 ### Train
@@ -11,6 +17,7 @@ python scripts/train.py -m DTransformer -d [assist09,assist17,algebra05,statics]
 ```
 
 For more options, run:
+
 ```bash
 python scripts/train.py -h
 ```

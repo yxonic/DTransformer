@@ -1,107 +1,77 @@
-import subprocess
 import linecache
 import math
-import queue
-import random
+import subprocess
 import sys
-import threading
 
 import torch
-
-
-class KTData:
-    def __init__(
-        self, data_path: str, inputs=None, batch_size=None, seq_len=None, shuffle=False
-    ):
-        if inputs is None:
-            inputs = ["q", "s"]
-        self.inputs = inputs
-        self.data = Lines(data_path, group=len(inputs) + 1)
-        self.transform = Transform(self.data, inputs, seq_len)
-        self.batch_size = batch_size
-        self.seq_len = seq_len
-        self.shuffle = shuffle
-
-    def __iter__(self):
-        return Iterator(
-            self.transform,
-            batch_size=self.batch_size,
-            full_shuffle=self.shuffle,
-            transform=lambda x: _transform_batch(
-                [d.data for d in x], self.inputs, self.seq_len
-            ),
-            prefetch=True,
-        )
-
-    def __getitem__(self, index):
-        return self.transform[index]
-
-
-def _transform_batch(batch, fields, seq_len=None):
-    batch = list(zip(*batch))
-    batch = [
-        torch.nn.utils.rnn.pad_sequence(
-            [torch.tensor(x) if isinstance(x, list) else x for x in item],
-            batch_first=True,
-            padding_value=-1,
-        )
-        for item in batch
-    ]
-    return Batch(batch, fields, batch[0].size(1), seq_len)
+from torch.utils.data import DataLoader
 
 
 class Batch:
-    def __init__(self, data, fields, length, seq_len=None):
+    def __init__(self, data, fields, seq_len=None):
         self.data = data
-        self.stoi = {f: i for i, f in enumerate(fields)}
-        self.length = length
+        self.field_index = {f: i for i, f in enumerate(fields)}
         self.seq_len = seq_len
 
     def get(self, *fields):
-        L = self.length
-        return (
-            [
+        L = len(self.data[0])
+        return [
+            self.data[self.field_index[f]]
+            if self.seq_len is None
+            else [
                 [
-                    self.data[self.stoi[f]][
+                    self.data[self.field_index[f]][
                         :, i * self.seq_len : (i + 1) * self.seq_len
                     ]
                     for i in range(math.ceil(L / self.seq_len))
                 ]
                 for f in fields
             ]
-            if self.seq_len is not None
-            else [self.data[self.stoi[f]] for f in fields]
+            for f in fields
+        ]
+
+
+class KTData:
+    def __init__(self, data_path, inputs, batch_size=1, seq_len=None, shuffle=False):
+        self.data = Lines(data_path, group=len(inputs) + 1)
+        self.loader = DataLoader(
+            self.data,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            collate_fn=transform_batch(inputs, seq_len),
+            num_workers=2,
         )
-
-
-class Transform:
-    def __init__(self, data, inputs, seq_len):
-        self.data = data
         self.inputs = inputs
-        self.seq_len = seq_len
 
-    def __len__(self):
-        return len(self.data)
+    def __iter__(self):
+        return iter(self.loader)
 
     def __getitem__(self, index):
-        batch = self.data[index]
+        return Batch(transform_sample(self.data[index]), self.inputs)
 
-        # single sequence
-        if isinstance(index, int):
-            del batch[0]  # remove count
-            items = [[int(x) for x in line.strip().split(",")] for line in batch]
-            return Batch(
-                [torch.tensor(item) for item in items],
-                self.inputs,
-                len(items[0]),
+
+def transform_sample(sample):
+    return torch.tensor(
+        [[int(x) for x in line.strip().split(",")] for line in sample[1:]]
+    )
+
+
+def transform_batch(inputs, seq_len):
+    def transform(samples):
+        batch = [transform_sample(s) for s in samples]
+        # transpose to sequences
+        batch = list(zip(*batch))
+        batch = [
+            torch.nn.utils.rnn.pad_sequence(
+                seqs,
+                batch_first=True,
+                padding_value=-1,
             )
+            for seqs in batch
+        ]
+        return Batch(batch, inputs, seq_len)
 
-        # batch
-        items = []
-        for lines in batch:
-            del lines[0]  # remove count
-            items.append([[int(x) for x in line.strip().split(",")] for line in lines])
-        return _transform_batch(items, self.inputs, self.seq_len)
+    return transform
 
 
 class Lines:
@@ -170,157 +140,6 @@ class Lines:
             return ls
 
         raise IndexError
-
-
-class Iterator:
-    """Iterator on data and labels, with states for save and restore."""
-
-    def __init__(
-        self,
-        data,
-        *label,
-        prefetch=False,
-        length=None,
-        batch_size=None,
-        transform=None,
-        shuffle=False,
-        full_shuffle=False,
-    ):
-        self.data = data
-        self.label = label
-        self.prefetch = prefetch
-        self.batch_size = batch_size
-        self.queue = queue.Queue(maxsize=8)
-        self.length = length if length is not None else len(data)
-        self.transform = transform
-
-        assert all(
-            self.length == len(lab) for lab in label
-        ), "data and label must have same lengths"
-
-        self.index = list(range(len(self)))
-        self.full_index = None
-        if shuffle:
-            random.shuffle(self.index)
-        if full_shuffle:
-            self.full_index = list(range(self.length))
-            random.shuffle(self.full_index)
-
-        self.thread = None
-        self.pos = 0
-
-    def __len__(self):
-        if self.batch_size is None:
-            return self.length
-        return math.ceil(self.length / self.batch_size)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.thread is None and self.prefetch:
-            self.thread = threading.Thread(target=self.produce, daemon=True)
-            self.thread.start()
-
-        if self.pos >= len(self.index):
-            raise StopIteration
-
-        if not self.prefetch:
-            self.produce(False)
-        item = self.queue.get()
-        if isinstance(item, Exception):
-            raise item
-        else:
-            self.pos += 1
-            return item
-
-    def produce(self, daemon=True):
-        if self.batch_size is None:
-            # no batch, direct indexing
-            try:
-                for i in range(self.pos, self.length):
-                    data = self.data[i]
-                    label = [label[i] for label in self.label]
-                    if label:
-                        self.queue.put([data] + label)
-                    else:
-                        self.queue.put(data)
-
-                    if not daemon:
-                        return
-
-            except Exception as e:
-                if daemon:
-                    self.queue.put(e)
-                    return
-                else:
-                    raise
-
-        if self.full_index:
-            for i in range(self.pos, len(self)):
-                try:
-                    bs = self.batch_size
-                    inds = self.full_index[i * bs : (i + 1) * bs]
-
-                    data_batch = [self.data[i] for i in inds]
-                    if self.transform is not None:
-                        data_batch = self.transform(data_batch)
-
-                    label_batch = [
-                        [label[i] for i in inds]
-                        if self.transform is None
-                        else self.transform([label[i] for i in inds])
-                        for label in self.label
-                    ]
-
-                    if label_batch:
-                        self.queue.put([data_batch] + label_batch)
-                    else:
-                        self.queue.put(data_batch)
-
-                    if not daemon:
-                        return
-
-                except Exception as e:
-                    if daemon:
-                        self.queue.put(e)
-                        return
-                    else:
-                        raise
-
-        else:
-            for i in range(self.pos, len(self)):
-                try:
-                    index = self.index[i]
-
-                    bs = self.batch_size
-
-                    if callable(self.data):
-                        data_batch = self.data(index * bs, (index + 1) * bs)
-                    else:
-                        data_batch = self.data[index * bs : (index + 1) * bs]
-
-                    label_batch = [
-                        label(index * bs, (index + 1) * bs)
-                        if callable(label)
-                        else label[index * bs : (index + 1) * bs]
-                        for label in self.label
-                    ]
-
-                    if label_batch:
-                        self.queue.put([data_batch] + label_batch)
-                    else:
-                        self.queue.put(data_batch)
-
-                    if not daemon:
-                        return
-
-                except Exception as e:
-                    if daemon:
-                        self.queue.put(e)
-                        return
-                    else:
-                        raise
 
 
 def _clip(v, low, high):
