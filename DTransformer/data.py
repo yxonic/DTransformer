@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 class Batch:
     def __init__(self, data, fields, seq_len=None):
         self.data = data
+        self.fields = fields
         self.field_index = {f: i for i, f in enumerate(fields)}
         self.seq_len = seq_len
 
@@ -32,46 +33,64 @@ class Batch:
 
 
 class KTData:
-    def __init__(self, data_path, inputs, batch_size=1, seq_len=None, shuffle=False):
+    def __init__(
+        self,
+        data_path,
+        inputs,
+        batch_size=1,
+        seq_len=None,
+        shuffle=False,
+        num_workers=0,
+    ):
         self.data = Lines(data_path, group=len(inputs) + 1)
         self.loader = DataLoader(
-            self.data,
+            self,
             batch_size=batch_size,
             shuffle=shuffle,
-            collate_fn=transform_batch(inputs, seq_len),
-            num_workers=2,
+            collate_fn=transform_batch,
+            num_workers=num_workers,
         )
         self.inputs = inputs
+        self.seq_len = seq_len
 
     def __iter__(self):
         return iter(self.loader)
 
+    def __len__(self):
+        return len(self.data)
+
     def __getitem__(self, index):
-        return Batch(transform_sample(self.data[index]), self.inputs)
+        return Batch(
+            torch.tensor(
+                [
+                    [int(x) for x in line.strip().split(",")]
+                    for line in self.data[index][1:]
+                ]
+            ),
+            self.inputs,
+            self.seq_len,
+        )
 
 
-def transform_sample(sample):
-    return torch.tensor(
-        [[int(x) for x in line.strip().split(",")] for line in sample[1:]]
-    )
+def transform_batch(batch):
+    # collect data
+    batch_data = [b.data for b in batch]
+    # merge configs
+    fields, seq_len = batch[0].fields, batch[0].seq_len
 
+    # transpose to separate sequences
+    batch = list(zip(*batch_data))
+    # pad sequences
+    batch = [
+        torch.nn.utils.rnn.pad_sequence(
+            seqs,
+            batch_first=True,
+            padding_value=-1,
+        )
+        for seqs in batch
+    ]
 
-def transform_batch(inputs, seq_len):
-    def transform(samples):
-        batch = [transform_sample(s) for s in samples]
-        # transpose to sequences
-        batch = list(zip(*batch))
-        batch = [
-            torch.nn.utils.rnn.pad_sequence(
-                seqs,
-                batch_first=True,
-                padding_value=-1,
-            )
-            for seqs in batch
-        ]
-        return Batch(batch, inputs, seq_len)
-
-    return transform
+    return Batch(batch, fields, seq_len)
 
 
 class Lines:
