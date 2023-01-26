@@ -1,5 +1,7 @@
 # DTransformer
 
+Code for _Tracing Knowledge Instead of Patterns: Stable Knowledge Tracing with Diagnostic Transformer_ (accepted at WWW23).
+
 ## Installation
 
 ```bash
