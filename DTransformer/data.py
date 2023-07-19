@@ -16,8 +16,8 @@ class Batch:
 
     def get(self, *fields):
         L = len(self.data[0])
-        return [
-            self.data[self.field_index[f]]
+        return (
+            [self.data[self.field_index[f]] for f in fields]
             if self.seq_len is None
             else [
                 [
@@ -28,8 +28,7 @@ class Batch:
                 ]
                 for f in fields
             ]
-            for f in fields
-        ]
+        )
 
 
 class KTData:
