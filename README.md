@@ -1,6 +1,27 @@
 # DTransformer
 
-Code for _Tracing Knowledge Instead of Patterns: Stable Knowledge Tracing with Diagnostic Transformer_ (accepted at WWW23).
+Code for _Tracing Knowledge Instead of Patterns: Stable Knowledge Tracing with Diagnostic Transformer_ (accepted at WWW '23).
+
+Cite this work:
+
+```bibtex
+@inproceedings{10.1145/3543507.3583255,
+author = {Yin, Yu and Dai, Le and Huang, Zhenya and Shen, Shuanghong and Wang, Fei and Liu, Qi and Chen, Enhong and Li, Xin},
+title = {Tracing Knowledge Instead of Patterns: Stable Knowledge Tracing with Diagnostic Transformer},
+year = {2023},
+isbn = {9781450394161},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3543507.3583255},
+doi = {10.1145/3543507.3583255},
+booktitle = {Proceedings of the ACM Web Conference 2023},
+pages = {855–864},
+numpages = {10},
+keywords = {contrastive learning, knowledge tracing, DTransformer},
+location = {Austin, TX, USA},
+series = {WWW '23}
+}
+```
 
 ## Installation
 
