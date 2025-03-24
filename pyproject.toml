@@ -1,24 +1,29 @@
-[tool.poetry]
+[project]
 name = "DTransformer"
 version = "0.1.0"
 description = ""
-authors = ["Yu Yin <yxonic@gmail.com>"]
+readme = "README.md"
+requires-python = ">=3.12"
 
-[tool.poetry.dependencies]
-python = ">=3.8,<3.12"
-torch = "^1.13.1"
-numpy = "^1.23.1"
-tomlkit = "^0.11.4"
-scipy = "^1.10.0"
-scikit-learn = "^1.1.2"
+dependencies = [
+    "numpy",
+    "scikit-learn",
+    "scipy",
+    "tomlkit",
+    "torch",
+    "tqdm",
+]
 
-[tool.poetry.dev-dependencies]
-pytest = "^7.1.2"
-black = "^22.6.0"
-python-lsp-server = "^1.5.0"
-python-lsp-black = "^1.2.1"
-tqdm = "^4.64.1"
+[dependency-groups]
+dev = [
+    "pytest",
+    "python-lsp-ruff",
+    "python-lsp-server",
+    "ruff",
+]
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.setuptools]
+packages = ["DTransformer"]
+
+[tool.ruff.lint]
+ignore = ["E741", "F401"]

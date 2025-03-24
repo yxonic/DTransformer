@@ -81,7 +81,7 @@ def main(args):
     fig = trace_map(y[ind_k, :], q, s, span, text_label=True)
 
     plt.show()
-    # fig.savefig('tracing.pdf', bbox_inches='tight')
+    fig.savefig('tracing.pdf', bbox_inches='tight')
 
 
 if __name__ == "__main__":

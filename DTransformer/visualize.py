@@ -61,7 +61,7 @@ def trace_map(y, q, s, span=range(30), k_color=None, text_label=False, figsize=(
             if i == 0:
                 label.append("-")
             else:
-                label.append(f"{q[i-1].item()}-{s[i-1].item()}")
+                label.append(f"{q[i - 1].item()}-{s[i - 1].item()}")
         ax.set_xticks(np.arange(0.5, len(span)), label)
 
     return fig

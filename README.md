@@ -26,7 +26,17 @@ Cite this work:
 ## Installation
 
 ```bash
-poetry install
+# clone the project
+git clone git@github.com:yxonic/DTransformer.git
+cd DTransformer
+
+# within an existing virtual environment (like conda):
+pip install -e .
+
+# or, install with [uv](https://docs.astral.sh/uv/)
+uv sync
+source .venv/bin/activate
+uv pip install -e .
 ```
 
 ## Usage
