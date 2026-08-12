@@ -1,3 +1,5 @@
+
+
 # DTransformer
 
 Code for _Tracing Knowledge Instead of Patterns: Stable Knowledge Tracing with Diagnostic Transformer_ (accepted at WWW '23).
@@ -48,6 +50,7 @@ Train DTransformer with CL loss:
 ```bash
 python scripts/train.py -m DTransformer -d [assist09,assist17,algebra05,statics] -bs 32 -tbs 32 -p -cl --proj [-o output/DTransformer_assist09] [--device cuda]
 ```
+*(Note: The `-p` flag enables PID tracking and is only applicable to datasets that include student IDs, such as `assist09`, `assist17`, and `algebra05`.)*
 
 For more options, run:
 
